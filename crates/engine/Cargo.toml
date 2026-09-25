@@ -1,0 +1,34 @@
+[package]
+name = "notizli-engine"
+description = "Records the room microphone and the call's sound to a crash-safe WebM/Opus file."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = ["opus"]
+# libopus is built from source with CMake; turn it off to type-check the
+# capture code for another OS from a machine that can't cross-build C.
+opus = ["dep:opus"]
+
+[dependencies]
+opus = { version = "0.4", optional = true }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+log.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+wasapi = "0.24"
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSDictionary", "NSString", "NSUUID", "NSValue"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFString", "CFDictionary", "CFArray", "CFNumber"] }
+objc2-core-audio = "0.3"
+objc2-core-audio-types = "0.3"
+
+[dev-dependencies]
+opus = "0.4"
