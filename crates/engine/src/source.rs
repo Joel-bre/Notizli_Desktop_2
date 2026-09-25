@@ -102,6 +102,7 @@ impl Source {
         g.stats.opens += 1;
     }
 
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn set_label(&self, label: &str) {
         self.inner.lock().unwrap().label = label.to_string();
     }

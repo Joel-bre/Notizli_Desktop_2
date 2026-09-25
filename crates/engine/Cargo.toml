@@ -25,7 +25,7 @@ sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSDictionary", "NSString", "NSUUID", "NSValue"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSDictionary", "NSObject", "NSString", "NSUUID", "NSValue"] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFString", "CFDictionary", "CFArray", "CFNumber"] }
 objc2-core-audio = "0.3"
 objc2-core-audio-types = "0.3"

@@ -13,6 +13,9 @@
 //! The two sources run on their own device clocks; a wall-clock mixer pulls
 //! 10 ms at a time from each, so one device disappearing never stalls the other.
 
+// Linux builds only run the tests: the capture plumbing is unused there.
+#![cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+
 mod analyzer;
 mod capture;
 mod error;

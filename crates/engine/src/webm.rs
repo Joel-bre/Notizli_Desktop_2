@@ -449,9 +449,12 @@ fn cluster_last_block_ms(cluster: &[u8]) -> Option<u64> {
     last
 }
 
+/// (timestamp ms, Opus packet) pairs.
+pub type Packets = Vec<(u64, Vec<u8>)>;
+
 /// Every Opus packet in a WebM file, for tests and diagnostics:
 /// (channels, pre-skip, [(timestamp ms, packet)]).
-pub fn read_packets(path: &Path) -> io::Result<(u8, u16, Vec<(u64, Vec<u8>)>)> {
+pub fn read_packets(path: &Path) -> io::Result<(u8, u16, Packets)> {
     let data = std::fs::read(path)?;
     let mut cur = io::Cursor::new(&data[..]);
     let (id, size) = read_element_header(&mut cur)?;

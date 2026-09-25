@@ -10,7 +10,9 @@ pub const FRAME: usize = 960;
 const PACKET_MS: u64 = 20;
 /// Plenty for speech on two independent channels; ~43 MB per hour, so the
 /// server's 200 MB limit is about 4.5 hours.
+#[cfg_attr(not(feature = "opus"), allow(dead_code))]
 pub const BITRATE_STEREO: i32 = 96_000;
+#[cfg_attr(not(feature = "opus"), allow(dead_code))]
 pub const BITRATE_MONO: i32 = 48_000;
 
 pub struct OpusFile {
@@ -46,10 +48,6 @@ impl OpusFile {
 
     pub fn disk_error(&self) -> Option<&str> {
         self.writer.disk_error()
-    }
-
-    pub fn duration_ms(&self) -> u64 {
-        self.writer.duration_ms()
     }
 
     /// Encode what is left (padded with silence) and close the file.

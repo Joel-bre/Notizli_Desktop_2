@@ -19,7 +19,7 @@ mod macos;
 #[cfg(windows)]
 mod windows;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "opus"))]
 pub(crate) mod fake;
 
 /// A microphone the user can choose.

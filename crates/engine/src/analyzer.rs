@@ -193,7 +193,7 @@ impl Analyzer {
             }
         }
 
-        if self.seconds % HEALTH_EVERY_S == 0 {
+        if self.seconds.is_multiple_of(HEALTH_EVERY_S) {
             self.health_point(has_other);
         }
     }
