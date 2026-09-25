@@ -1,0 +1,54 @@
+name: CI
+
+# Tests on Linux, Windows and macOS, plus the Windows recording-test tool as a
+# downloadable artifact. Never publishes a release.
+on:
+  push:
+  pull_request:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets
+      - run: cargo test
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test
+      - run: cargo build --release -p notizli-rec
+      - name: Stage the recording test
+        shell: bash
+        run: |
+          mkdir -p out
+          cp target/release/notizli-rec.exe crates/rec-cli/windows/record-test.bat out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notizli-record-test-windows-${{ github.run_number }}
+          path: out/
+          retention-days: 30
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test
+      - run: cargo build --release -p notizli-rec

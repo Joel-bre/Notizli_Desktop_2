@@ -1,0 +1,1 @@
+Could not start recording: recording is only available on Windows and macOS
