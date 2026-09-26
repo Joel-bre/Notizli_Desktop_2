@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Notizli</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="brand">Notizli<span class="accent">.</span><span class="tag">desktop recorder</span></div>
+
+  <!-- ============ NOT PAIRED ============ -->
+  <section class="frame" id="s-unpaired" hidden>
+    <div class="unsent" data-unsent hidden></div>
+    <h2>Connect this app to your account</h2>
+    <p class="muted">
+      Recordings are transcribed into minutes and action items on your Notizli account,
+      so pair this computer first.
+    </p>
+    <button class="primary block" id="pair-btn">Pair with my account</button>
+
+    <div class="divider"><span>or paste a pairing token</span></div>
+    <input type="text" id="token-input" placeholder="ccp_pair_…" spellcheck="false" autocomplete="off" />
+    <button class="block" id="submit-token-btn" style="margin-top:10px">Pair with this token</button>
+    <p class="muted warn-text" id="token-msg" hidden></p>
+    <p class="fineprint">
+      "Pair with my account" opens <code>notizli.ch/pair</code> in your browser. Click
+      "Pair this device" there, or copy the token it shows and paste it above.
+      <br /><button class="link" id="record-unpaired-btn">Record now, pair later</button>
+    </p>
+  </section>
+
+  <!-- ============ IDLE ============ -->
+  <section class="frame" id="s-idle" hidden>
+    <div class="paired-row" id="paired-row"><span class="dot ok"></span><span id="paired-label">Paired</span></div>
+    <div class="banner" id="unpaired-banner" hidden>
+      <span>Not paired: recordings stay on this computer until you pair.</span>
+      <button class="link" id="banner-pair-btn">Pair now</button>
+    </div>
+    <div class="unsent" data-unsent hidden></div>
+    <h2>Record this meeting</h2>
+    <p class="muted">
+      Notizli records your microphone and the sound of the call, on two separate
+      channels of one file, and saves it on this computer before uploading.
+    </p>
+
+    <label class="field" for="meeting-name">Meeting title — optional</label>
+    <input type="text" id="meeting-name" maxlength="200" placeholder="Acme — pricing call" spellcheck="false" />
+
+    <label class="field" for="device">Microphone</label>
+    <select id="device"><option value="">Default microphone</option></select>
+
+    <button class="primary block" id="record-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M4.93 19.07A10 10 0 0 1 4.93 4.93M7.76 16.24a6 6 0 0 1 0-8.49M16.24 7.76a6 6 0 0 1 0 8.49M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+      Start recording
+    </button>
+    <button class="block" id="unpair-btn" style="margin-top:10px">Unpair</button>
+    <p class="fineprint" id="platform-hint"></p>
+  </section>
+
+  <!-- ============ STARTING ============ -->
+  <section class="frame" id="s-starting" hidden>
+    <div class="status-line"><span class="pulse"></span>Starting…</div>
+    <p class="muted" style="margin-top:14px" id="starting-text"></p>
+  </section>
+
+  <!-- ============ RECORDING ============ -->
+  <section class="frame" id="s-recording" hidden>
+    <div class="row-head">
+      <div>
+        <div class="status-line"><span class="pulse"></span><span id="rec-label">Recording</span></div>
+        <div class="timer" id="timer">00:00</div>
+      </div>
+      <button class="primary" id="stop-btn">
+        <svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>
+        Finish and transcribe
+      </button>
+    </div>
+    <p class="rec-title" id="rec-title"></p>
+
+    <div class="meters">
+      <div>
+        <div class="meter-label"><span>You — microphone</span><span class="hint" id="mic-name"></span></div>
+        <div class="track"><div class="fill" id="mic-fill"></div></div>
+      </div>
+      <div>
+        <div class="meter-label"><span>Other side — the call</span><span class="hint" id="other-name"></span></div>
+        <div class="track"><div class="fill" id="other-fill"></div></div>
+      </div>
+    </div>
+    <p class="warning" id="silent-warning" hidden>
+      The other side hasn't been heard for 2 minutes while you talk. Check that the call's
+      sound plays on this computer (and not on a phone or another device).
+    </p>
+
+    <div class="rec-foot">
+      <span id="rec-status">Saved as you go. Uploads when you finish.</span>
+      <button class="link" id="discard-btn">Discard</button>
+    </div>
+  </section>
+
+  <!-- ============ UPLOADING ============ -->
+  <section class="frame" id="s-uploading" hidden>
+    <div class="status-line"><span class="pulse"></span><span id="upload-label">Saving…</span></div>
+    <h2 style="margin-top:12px" id="upload-title"></h2>
+    <div class="track" style="margin-top:18px"><div class="fill" id="upload-fill"></div></div>
+    <p class="muted" id="upload-detail">The recording is safe on this computer.</p>
+  </section>
+
+  <!-- ============ DONE ============ -->
+  <section class="frame" id="s-done" hidden>
+    <div class="icon-row">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      <div>
+        <h2 id="done-title">Uploaded — transcription started</h2>
+        <p class="muted" id="done-text">
+          Minutes and action items appear on the meeting page once the transcript is ready.
+        </p>
+        <div class="btn-group">
+          <button class="primary" id="open-meeting-btn">Open meeting</button>
+          <button class="primary" id="done-pair-btn" hidden>Pair with my account</button>
+          <button id="record-another-btn">Record another</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ERROR ============ -->
+  <section class="frame" id="s-error" hidden>
+    <div class="icon-row">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/></svg>
+      <div style="min-width:0">
+        <h2 id="error-title">That didn't work</h2>
+        <p class="muted" id="error-msg"></p>
+        <p class="muted" id="error-note" hidden></p>
+        <div class="btn-group">
+          <button class="primary" id="error-retry-btn" hidden>Try upload again</button>
+          <button class="primary" id="error-pair-btn" hidden>Pair again</button>
+          <button id="error-save-btn" hidden>Save a copy…</button>
+          <button id="error-back-btn">Back</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CONFIRM DIALOG ============ -->
+  <div class="overlay" id="dialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+      <h2 id="dialog-title"></h2>
+      <p class="muted" id="dialog-text"></p>
+      <p class="muted" id="dialog-note" hidden></p>
+      <div class="btn-group">
+        <button id="dialog-cancel">Cancel</button>
+        <button class="primary" id="dialog-ok">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+  <div class="version" id="version"></div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

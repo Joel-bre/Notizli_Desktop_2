@@ -1,0 +1,12 @@
+{
+  "name": "notizli-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Build tooling for the Notizli desktop recorder (the app itself is Rust + plain HTML).",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

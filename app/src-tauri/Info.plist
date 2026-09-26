@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Notizli records your side of the meeting from the microphone.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>Notizli records the other side of the meeting from the sound your Mac plays.</string>
+</dict>
+</plist>

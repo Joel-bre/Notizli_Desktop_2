@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Notizli",
+  "mainBinaryName": "Notizli",
+  "identifier": "ch.notizli.recorder",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Notizli",
+        "width": 500,
+        "height": 700,
+        "minWidth": 380,
+        "minHeight": 560,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "Notizli",
+    "category": "Productivity",
+    "shortDescription": "Records your meetings for Notizli",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "windows": {
+      "nsis": { "installMode": "currentUser" }
+    },
+    "macOS": {
+      "minimumSystemVersion": "14.4",
+      "entitlements": "entitlements.plist",
+      "signingIdentity": "-"
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": { "schemes": ["notizli-sh"] }
+    }
+  }
+}

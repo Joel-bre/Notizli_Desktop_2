@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/engine", "crates/core", "crates/rec-cli"]
+members = ["crates/engine", "crates/core", "crates/rec-cli", "app/src-tauri"]
 # The Tauri app needs WebView system libraries on Linux; CI builds it on
 # Windows and macOS explicitly. `cargo test` at the root covers the rest.
 default-members = ["crates/engine", "crates/core", "crates/rec-cli"]
