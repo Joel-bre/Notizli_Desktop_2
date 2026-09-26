@@ -43,6 +43,8 @@ pub struct SourceSummary {
 #[derive(Clone, Debug, Serialize)]
 pub struct HealthReport {
     pub duration_s: u32,
+    /// Both sides were heard as expected.
+    pub ok: bool,
     pub verdict: String,
     pub mic: SourceSummary,
     pub other: Option<SourceSummary>,
@@ -231,19 +233,28 @@ impl Analyzer {
             loudest_db: self.loudest_db[1],
             stats: o.stats(),
         });
-        let verdict = match &other {
-            None => "Microphone only: the other side of the call could not be recorded.".to_string(),
-            Some(o) if o.active_s == 0 && mic.active_s >= 30 => {
-                "The other side was never heard while the room talked. Check which speaker the call played on.".to_string()
+        let mic_silent = mic.active_s == 0 && duration_s >= 30;
+        let (ok, verdict) = match &other {
+            _ if mic_silent && other.as_ref().is_none_or(|o| o.active_s == 0) => {
+                (false, "Nothing was heard on either side. Check the microphone and that the call played on this computer.".to_string())
             }
-            Some(_) if self.longest_silent_talking_s >= WARN_AFTER_S => format!(
-                "Both sides recorded, but the other side was silent for {} min at one point while the room talked.",
-                self.longest_silent_talking_s / 60
+            _ if mic_silent => (false, "Your microphone didn't pick up anyone talking. Check the microphone (and its permission).".to_string()),
+            None => (false, "Microphone only: the other side of the call could not be recorded.".to_string()),
+            Some(o) if o.active_s == 0 && mic.active_s >= 30 => {
+                (false, "The other side was never heard while the room talked. Check which speaker the call played on.".to_string())
+            }
+            Some(_) if self.longest_silent_talking_s >= WARN_AFTER_S => (
+                false,
+                format!(
+                    "Both sides recorded, but the other side was silent for {} min at one point while the room talked.",
+                    self.longest_silent_talking_s / 60
+                ),
             ),
-            Some(_) => "Both sides recorded.".to_string(),
+            Some(_) => (true, "Both sides recorded.".to_string()),
         };
         HealthReport {
             duration_s,
+            ok,
             verdict,
             mic,
             other,
@@ -298,10 +309,18 @@ mod tests {
     }
 
     #[test]
+    fn a_silent_microphone_is_reported() {
+        let (r, _) = run(60, false, |_| true);
+        assert!(!r.ok);
+        assert!(r.verdict.contains("microphone"), "{}", r.verdict);
+    }
+
+    #[test]
     fn a_normal_call_is_fine() {
         let (r, evs) = run(200, true, |s| s % 3 != 0);
         assert!(!r.warned);
         assert!(evs.is_empty());
         assert_eq!(r.verdict, "Both sides recorded.");
+        assert!(r.ok);
     }
 }

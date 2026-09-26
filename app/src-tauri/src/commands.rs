@@ -312,6 +312,9 @@ pub struct FinishView {
     title: String,
     paired: bool,
     saved_elsewhere: Option<String>,
+    /// Both sides were heard, and the engine's plain-language verdict.
+    heard_ok: bool,
+    verdict: String,
 }
 
 /// Stop, save to disk, and hand the recording to the uploader.
@@ -322,6 +325,7 @@ pub async fn finish_recording(app: AppHandle) -> Res<FinishView> {
     let Active { recorder, mut meta, .. } = active;
     let result = tauri::async_runtime::spawn_blocking(move || recorder.stop()).await.map_err(|e| e.to_string())?;
     let rec = result.map_err(|e| format!("The recording could not be finished: {e}"))?;
+    let (heard_ok, verdict) = (rec.health.ok, rec.health.verdict.clone());
     meta.channel_layout = rec.layout.as_str().to_string();
     meta.duration_ms = rec.duration_ms;
     meta.size = rec.size;
@@ -345,7 +349,7 @@ pub async fn finish_recording(app: AppHandle) -> Res<FinishView> {
         state.upload.kick.notify_one();
     }
     changed(&app);
-    Ok(FinishView { id: meta.id, title: meta.title, paired: state.token().is_some(), saved_elsewhere })
+    Ok(FinishView { id: meta.id, title: meta.title, paired: state.token().is_some(), saved_elsewhere, heard_ok, verdict })
 }
 
 #[tauri::command]

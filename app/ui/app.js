@@ -15,6 +15,8 @@ let S = null; // last state from Rust
 let mode = null;
 let timerBase = { ms: 0, at: 0 };
 let micsLoaded = false;
+// What the engine said about the last recording: {id, ok, text}.
+let lastCheck = null;
 
 // ---- helpers -----------------------------------------------------------------
 
@@ -241,8 +243,17 @@ function renderRecording() {
   $("silent-warning").hidden = !r.labels.warning;
 }
 
+function showCheck(el, id) {
+  const c = lastCheck && lastCheck.id === id ? lastCheck : null;
+  el.hidden = !c;
+  if (!c) return;
+  el.textContent = c.ok ? `Check: ${c.text}` : c.text;
+  el.className = c.ok ? "check" : "check bad";
+}
+
 function renderUploading() {
   const id = mode.uploading;
+  showCheck($("upload-check"), id);
   const u = S.upload && S.upload.id === id ? S.upload : null;
   const title = (S.unsent.find((x) => x.id === id) || {}).title || "";
   $("upload-title").textContent = title;
@@ -259,6 +270,7 @@ function renderUploading() {
 }
 
 function renderDone(v) {
+  showCheck($("done-check"), v.id);
   $("done-title").textContent = v.meeting_id ? "Uploaded — transcription started" : "Saved on this computer";
   $("done-text").textContent = v.meeting_id
     ? "Minutes and action items appear on the meeting page once the transcript is ready."
@@ -390,6 +402,7 @@ async function finishRecording() {
   try {
     const r = await invoke("finish_recording");
     $("meeting-name").value = "";
+    lastCheck = { id: r.id, ok: r.heard_ok, text: r.verdict };
     if (r.saved_elsewhere) {
       mode = {
         error: {
@@ -399,7 +412,7 @@ async function finishRecording() {
         },
       };
     } else if (!r.paired) {
-      mode = { done: { meeting_id: null } };
+      mode = { done: { id: r.id, meeting_id: null } };
     } else {
       mode = { uploading: r.id };
     }

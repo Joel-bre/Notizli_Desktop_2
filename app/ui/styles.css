@@ -190,6 +190,8 @@ button.link:hover { background: none; color: var(--ink); }
 .fill { height: 100%; width: 0%; background: var(--ink); transition: width 0.1s linear; }
 .fill.quiet { background: var(--ink-muted); }
 
+.check { margin-top: 12px; font-size: 12.5px; color: var(--ink-muted); }
+.check.bad { padding: 10px 12px; border: 1px solid var(--signal); color: var(--signal); }
 .warning { margin-top: 16px; padding: 10px 12px; border: 1px solid var(--signal); color: var(--signal); font-size: 12.5px; }
 
 .rec-foot {
