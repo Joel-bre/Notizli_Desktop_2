@@ -289,7 +289,17 @@ pub async fn start_recording(app: AppHandle, title: Option<String>) -> Res<Recor
         capture_other_side: true,
         writing_app: format!("Notizli {}", app.package_info().version),
     };
-    let started = tauri::async_runtime::spawn_blocking(move || Recorder::start(cfg, events)).await.map_err(|e| e.to_string())?;
+    let started = tauri::async_runtime::spawn_blocking(move || {
+        // macOS: make sure the permission prompt is answered before opening devices.
+        if !notizli_engine::request_microphone_access().unwrap_or(true) {
+            return Err(notizli_engine::Error::Microphone(
+                "Notizli isn't allowed to use the microphone. Allow it in System Settings → Privacy & Security → Microphone, then try again.".into(),
+            ));
+        }
+        Recorder::start(cfg, events)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
     let recorder = match started {
         Ok(r) => r,
         Err(e) => {

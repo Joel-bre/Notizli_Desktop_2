@@ -146,6 +146,30 @@ fn is_alive(device: AudioObjectID) -> bool {
     get::<u32>(device, kAudioDevicePropertyDeviceIsAlive, kAudioObjectPropertyScopeGlobal).map(|v| v != 0).unwrap_or(false)
 }
 
+/// Microphone permission: the system prompt appears on first use of any
+/// input, but asking explicitly makes sure it shows before recording starts
+/// and tells us the answer.
+pub fn request_microphone_access(timeout: Duration) -> Result<bool, Error> {
+    use objc2_av_foundation::{AVAuthorizationStatus, AVCaptureDevice, AVMediaTypeAudio};
+    // SAFETY: reading an AVFoundation constant.
+    let Some(media) = (unsafe { AVMediaTypeAudio }) else { return Ok(true) };
+    // SAFETY: documented class method, valid media type.
+    let status = unsafe { AVCaptureDevice::authorizationStatusForMediaType(media) };
+    if status == AVAuthorizationStatus::Authorized {
+        return Ok(true);
+    }
+    if status == AVAuthorizationStatus::Denied || status == AVAuthorizationStatus::Restricted {
+        return Ok(false);
+    }
+    let (tx, rx) = std::sync::mpsc::channel::<bool>();
+    let handler = block2::RcBlock::new(move |granted: objc2::runtime::Bool| {
+        let _ = tx.send(granted.as_bool());
+    });
+    // SAFETY: the handler is copied by AVFoundation and called once.
+    unsafe { AVCaptureDevice::requestAccessForMediaType_completionHandler(media, &handler) };
+    Ok(rx.recv_timeout(timeout).unwrap_or(false))
+}
+
 pub fn input_devices() -> Result<Vec<InputDevice>, Error> {
     let default = default_device(kAudioHardwarePropertyDefaultInputDevice);
     Ok(devices()

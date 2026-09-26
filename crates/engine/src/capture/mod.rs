@@ -42,6 +42,15 @@ pub fn input_devices() -> Result<Vec<InputDevice>, Error> {
     Err(Error::Unsupported("recording is only available on Windows and macOS"))
 }
 
+/// Ask for microphone access where the system requires it (macOS), waiting
+/// for the user's answer. `Ok(false)` means the user said no (or said no before).
+pub fn request_microphone_access() -> Result<bool, Error> {
+    #[cfg(target_os = "macos")]
+    return macos::request_microphone_access(std::time::Duration::from_secs(120));
+    #[cfg(not(target_os = "macos"))]
+    Ok(true)
+}
+
 pub(crate) trait Capture: Send {
     fn stop(self: Box<Self>);
 }

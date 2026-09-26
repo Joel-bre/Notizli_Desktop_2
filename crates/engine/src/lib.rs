@@ -27,7 +27,7 @@ mod source;
 pub mod webm;
 
 pub use analyzer::{HealthPoint, HealthReport, SourceSummary};
-pub use capture::{input_devices, InputDevice};
+pub use capture::{input_devices, request_microphone_access, InputDevice};
 pub use error::Error;
 pub use recorder::{ChannelLayout, Recorder, RecorderConfig, RecorderEvent, Recording};
 
