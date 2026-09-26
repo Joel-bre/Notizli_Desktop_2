@@ -4,6 +4,11 @@ name: Release (draft)
 # installer and the macOS app for the version in Cargo.toml and attaches them
 # to a DRAFT GitHub release, which nobody sees until it is published by hand.
 # The app has no auto-update yet, so publishing never updates anyone.
+#
+# The files always have the same names (Notizli-Setup.exe, Notizli.dmg), so
+# these links always give the newest published release:
+#   https://github.com/Joel-bre/Notizli_Desktop_2/releases/latest/download/Notizli-Setup.exe
+#   https://github.com/Joel-bre/Notizli_Desktop_2/releases/latest/download/Notizli.dmg
 on:
   workflow_dispatch: {}
 
@@ -17,10 +22,12 @@ jobs:
         include:
           - os: windows-latest
             bundles: nsis
-            files: target/release/bundle/nsis/*.exe
+            built: target/release/bundle/nsis/*.exe
+            name: Notizli-Setup.exe
           - os: macos-latest
             bundles: dmg
-            files: target/release/bundle/dmg/*.dmg
+            built: target/release/bundle/dmg/*.dmg
+            name: Notizli.dmg
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -34,10 +41,17 @@ jobs:
         working-directory: app
       - run: npx tauri build --bundles ${{ matrix.bundles }}
         working-directory: app
+      - name: Give the file its permanent name
+        shell: bash
+        run: |
+          mkdir -p out
+          files=( ${{ matrix.built }} )
+          test ${#files[@]} -eq 1
+          cp "${files[0]}" "out/${{ matrix.name }}"
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.os }}
-          path: ${{ matrix.files }}
+          path: out/${{ matrix.name }}
 
   release:
     needs: build

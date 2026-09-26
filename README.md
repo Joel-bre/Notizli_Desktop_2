@@ -88,6 +88,15 @@ Bump `version` in `Cargo.toml`, push, then run **Actions → Release (draft)**.
 It builds the Windows installer and the macOS .dmg and attaches them to a
 *draft* release; publish it by hand on GitHub when ready.
 
+The files always have the same names, so these links always download the
+newest published release (use them on notizli.ch):
+
+- Windows: https://github.com/Joel-bre/Notizli_Desktop_2/releases/latest/download/Notizli-Setup.exe
+- Mac (Apple Silicon): https://github.com/Joel-bre/Notizli_Desktop_2/releases/latest/download/Notizli.dmg
+
+They work once a first release has been published (drafts don't count), and
+only while this repository is public.
+
 ## Not done yet
 
 - **Signing.** Windows builds are unsigned (SmartScreen warns). macOS builds are
