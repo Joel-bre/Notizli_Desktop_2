@@ -72,6 +72,7 @@ async fn upload_one(app: &AppHandle, token: &str, id: String) -> bool {
 
     let keep_going = match result {
         Ok(done) => {
+            log::info!("uploaded {} as meeting {}", id, done.meeting_id);
             if let Err(e) = state.store.accepted(&id) {
                 log::warn!("uploaded, but could not delete the local copy: {e}");
             }
@@ -84,6 +85,7 @@ async fn upload_one(app: &AppHandle, token: &str, id: String) -> bool {
         }
         Err(e) => {
             let (kind, message) = upload_error_view(&e);
+            log::warn!("upload of {id} failed ({kind}): {e:?}");
             match e {
                 ApiError::Unauthorized => {
                     meta.last_error = Some(message.clone());

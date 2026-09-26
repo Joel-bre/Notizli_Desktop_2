@@ -6,6 +6,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod logfile;
 mod state;
 mod uploader;
 
@@ -30,11 +31,13 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
+            logfile::init(&data_dir.join("logs"));
+            log::info!("Notizli {} starting on {}", app.package_info().version, std::env::consts::OS);
             let state = AppState::new(&data_dir)?;
             let recovered = state.store.recover();
             app.manage(state);
-            if !recovered.is_empty() {
-                log::info!("recovered {} interrupted recording(s)", recovered.len());
+            for r in &recovered {
+                log::info!("recovered interrupted recording {} ({} ms)", r.id, r.duration_ms);
             }
 
             // Installers register the scheme; this also covers a copied app.
@@ -83,6 +86,7 @@ fn main() {
             commands::show_in_folder,
             commands::save_copy,
             commands::discard_unsent,
+            commands::open_diagnostics,
         ])
         .build(tauri::generate_context!())
         .expect("error while starting Notizli");

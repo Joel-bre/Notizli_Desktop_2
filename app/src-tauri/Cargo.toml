@@ -15,7 +15,7 @@ notizli-engine.workspace = true
 notizli-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-log.workspace = true
+log = { workspace = true, features = ["std"] }
 time.workspace = true
 tauri = { version = "2", features = [] }
 tauri-plugin-deep-link = "2"

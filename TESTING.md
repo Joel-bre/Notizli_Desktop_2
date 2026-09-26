@@ -51,7 +51,9 @@ column with numbers around -20 to -50 while the other side talked
 3. Enter a title, click **Start recording**, talk for a minute during a call.
    Check: the timer runs, both meters move, and it says what it hears.
 4. Click **Finish and transcribe**. It shows the upload progress, then
-   **Uploaded — transcription started** → **Open meeting**.
+   **Uploaded — transcription started** → **Open meeting**. Under the title it
+   says whether both sides were heard ("Check: Both sides recorded.") or, in a
+   red box, what was missing.
 5. Also worth a try:
    - Close the window while recording: it must ask first.
    - Turn Wi-Fi off, record 30 seconds, finish: the recording must stay in the
@@ -74,6 +76,12 @@ column with numbers around -20 to -50 while the other side talked
 5. Finish, check the meeting on notizli.ch. Try once with AirPods too.
 
 ---
+
+## If something goes wrong
+
+Click **Diagnostics** (bottom left, next to the version). It opens a folder
+with `notizli.log` (what the app did) and the health report of each recording.
+Send those files to Claude.
 
 ## Where the app keeps things
 

@@ -559,6 +559,7 @@ $("error-back-btn").onclick = () => {
   mode = null;
   refresh();
 };
+$("diagnostics-btn").onclick = () => invoke("open_diagnostics").catch((e) => toast(errText(e)));
 $("device").onchange = () => invoke("set_mic", { device: $("device").value || null });
 $("unpair-btn").onclick = async () => {
   const ok = await confirmDialog({

@@ -221,5 +221,6 @@ button.link:hover { background: none; color: var(--ink); }
 }
 
 .version { margin-top: 16px; font-size: 10.5px; color: var(--ink-muted); letter-spacing: 0.04em; }
+.version button.link { font-size: 10.5px; }
 
 [hidden] { display: none !important; }

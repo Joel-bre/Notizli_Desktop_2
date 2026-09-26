@@ -293,10 +293,12 @@ pub async fn start_recording(app: AppHandle, title: Option<String>) -> Res<Recor
     let recorder = match started {
         Ok(r) => r,
         Err(e) => {
+            log::warn!("recording did not start: {e}");
             let _ = state.store.discard(&meta.id);
             return Err(e.to_string());
         }
     };
+    log::info!("recording {} started ({})", meta.id, recorder.layout().as_str());
     meta.channel_layout = recorder.layout().as_str().to_string();
     let _ = state.store.save(&meta);
     let active = Active { recorder, meta, started: Instant::now(), labels, _awake: Awake::start() };
@@ -326,6 +328,10 @@ pub async fn finish_recording(app: AppHandle) -> Res<FinishView> {
     let result = tauri::async_runtime::spawn_blocking(move || recorder.stop()).await.map_err(|e| e.to_string())?;
     let rec = result.map_err(|e| format!("The recording could not be finished: {e}"))?;
     let (heard_ok, verdict) = (rec.health.ok, rec.health.verdict.clone());
+    log::info!("recording {} finished: {} s, {} bytes; {}", meta.id, rec.duration_ms / 1000, rec.size, verdict);
+    if let Some(e) = &rec.disk_error {
+        log::warn!("disk error during recording {}: {e}", meta.id);
+    }
     meta.channel_layout = rec.layout.as_str().to_string();
     meta.duration_ms = rec.duration_ms;
     meta.size = rec.size;
@@ -411,6 +417,14 @@ pub async fn save_copy(app: AppHandle, id: String) -> Res<Option<String>> {
     let Some(path) = chosen.and_then(|p| p.into_path().ok()) else { return Ok(None) };
     std::fs::copy(&source, &path).map_err(|e| format!("Couldn't save the copy: {e}"))?;
     Ok(Some(path.display().to_string()))
+}
+
+/// The folder with the log file and the health reports of past recordings.
+#[tauri::command]
+pub fn open_diagnostics(app: AppHandle, state: State<'_, AppState>) -> Res<()> {
+    let dir = state.data_dir.join("logs");
+    let _ = std::fs::create_dir_all(&dir);
+    app.opener().open_path(dir.display().to_string(), None::<&str>).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
