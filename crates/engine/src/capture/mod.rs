@@ -14,6 +14,8 @@ use crate::error::Error;
 use crate::recorder::Events;
 use crate::source::Source;
 
+#[cfg(any(windows, test))]
+mod choose;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(windows)]

@@ -24,6 +24,7 @@ use wasapi::{
     StreamMode, WaveFormat,
 };
 
+use super::choose::{Candidate, Chooser, Target};
 use super::{downmix, sleep_unless, Capture, InputDevice, ThreadCapture};
 use crate::error::Error;
 use crate::recorder::{Events, RecorderEvent};
@@ -249,89 +250,51 @@ pub fn start_other_side(source: Arc<Source>, events: Events) -> Result<Box<dyn C
     Ok(Box::new(cap))
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct Choice {
-    device_id: String,
-    device_name: String,
-    app: Option<String>,
-}
-
-impl Choice {
-    fn label(&self) -> String {
-        match &self.app {
-            Some(app) => format!("{app} — {}", self.device_name),
-            None => self.device_name.clone(),
-        }
-    }
-}
-
 fn call_thread(source: &Source, events: &Events, stop: &AtomicBool, ready: &dyn Fn(Result<(), String>)) {
     com();
     let mut system = System::new();
     let own_pid = std::process::id();
     let mut started = false;
-    let mut current: Option<Choice> = None;
+    let mut chooser = Chooser::default();
     let mut stream: Option<Stream> = None;
-    let mut pending: Option<(String, u8)> = None;
+    let mut label = String::new();
     let mut last_check: Option<Instant> = None;
     let mut mono = Vec::with_capacity(RATE / 10);
 
     while !stop.load(Ordering::SeqCst) {
         if stream.is_none() || last_check.is_none_or(|t| t.elapsed() >= CHECK_EVERY) {
             last_check = Some(Instant::now());
-            match choose_speaker(&mut system, own_pid) {
-                Ok(choice) => {
-                    let same_device = current.as_ref().is_some_and(|c| c.device_id == choice.device_id);
-                    let switch = if stream.is_none() {
-                        true
-                    } else if same_device {
-                        pending = None;
-                        false
-                    } else {
-                        // Take a new speaker only once it is chosen twice in a row.
-                        match &mut pending {
-                            Some((id, n)) if *id == choice.device_id => {
-                                *n += 1;
-                                *n >= 2
-                            }
-                            _ => {
-                                pending = Some((choice.device_id.clone(), 1));
-                                false
-                            }
-                        }
-                    };
-                    if switch {
-                        pending = None;
+            match speaker_candidates(&mut system, own_pid) {
+                Ok((candidates, default)) => {
+                    let (target, open) = chooser.decide(&candidates, &default);
+                    if open || stream.is_none() {
                         stream = None;
-                        match open_speaker(&choice.device_id) {
+                        match open_speaker(&target.device_id) {
                             Ok(st) => {
-                                source.opened(&choice.label());
-                                events(RecorderEvent::Hearing { label: choice.label() });
+                                label = target.label();
+                                source.opened(&label);
+                                events(RecorderEvent::Hearing { label: label.clone() });
                                 if started {
-                                    events(RecorderEvent::Notice { text: format!("Now recording the call from \"{}\"", choice.device_name) });
+                                    events(RecorderEvent::Notice { text: format!("Now recording the call from \"{}\"", target.device_name) });
                                 } else {
                                     started = true;
                                     ready(Ok(()));
                                 }
                                 stream = Some(st);
-                                current = Some(choice);
                             }
                             Err(e) => {
                                 if !started {
                                     ready(Err(e));
                                     return;
                                 }
-                                log::warn!("could not open \"{}\": {e}", choice.device_name);
-                                current = None;
+                                log::warn!("could not open \"{}\": {e}", target.device_name);
+                                chooser.reset();
                             }
                         }
-                    } else if let Some(cur) = &mut current {
-                        // Same speaker, maybe a different app (the call started in a browser).
-                        if same_device && cur.app != choice.app && choice.app.is_some() {
-                            cur.app = choice.app;
-                            source.set_label(&cur.label());
-                            events(RecorderEvent::Hearing { label: cur.label() });
-                        }
+                    } else if target.label() != label {
+                        label = target.label();
+                        source.set_label(&label);
+                        events(RecorderEvent::Hearing { label: label.clone() });
                     }
                 }
                 Err(e) => {
@@ -353,7 +316,7 @@ fn call_thread(source: &Source, events: &Events, stop: &AtomicBool, ready: &dyn 
                 Err(e) => {
                     log::warn!("speaker capture stopped: {e}");
                     stream = None;
-                    current = None;
+                    chooser.reset();
                 }
             },
             None => sleep_unless(stop, Duration::from_millis(250)),
@@ -367,9 +330,9 @@ fn open_speaker(device_id: &str) -> Result<Stream, String> {
     Stream::open(&device, true)
 }
 
-/// The speaker to record: where the most relevant app is playing, else the
-/// default speaker.
-fn choose_speaker(system: &mut System, own_pid: u32) -> Result<Choice, String> {
+/// Every active playback session (with its app's priority) on every speaker,
+/// and the default speaker.
+fn speaker_candidates(system: &mut System, own_pid: u32) -> Result<(Vec<Candidate>, Target), String> {
     let enumerator = DeviceEnumerator::new().map_err(s)?;
     let mut sessions: Vec<(String, String, u32, f32)> = Vec::new(); // device id, device name, pid, peak
     if let Ok(devices) = enumerator.get_device_collection(&Direction::Render) {
@@ -395,29 +358,22 @@ fn choose_speaker(system: &mut System, own_pid: u32) -> Result<Choice, String> {
     }
 
     let names = process_names(system, sessions.iter().map(|x| x.2));
-    let mut best: Option<(u8, f32, usize, Option<String>)> = None;
-    for (i, (_, _, pid, peak)) in sessions.iter().enumerate() {
-        let (priority, app) = classify(&names, *pid, own_pid);
-        if priority == u8::MAX {
-            continue;
-        }
-        let better = best.as_ref().is_none_or(|(p, pk, _, _)| priority < *p || (priority == *p && *peak > *pk));
-        if better {
-            best = Some((priority, *peak, i, app));
-        }
-    }
-    if let Some((_, _, i, app)) = best {
-        let (id, name, _, _) = &sessions[i];
-        return Ok(Choice { device_id: id.clone(), device_name: name.clone(), app });
-    }
+    let candidates = sessions
+        .into_iter()
+        .filter_map(|(device_id, device_name, pid, peak)| {
+            let (priority, app) = classify(&names, pid, own_pid);
+            (priority != u8::MAX).then_some(Candidate { device_id, device_name, priority, app, peak })
+        })
+        .collect();
     let device = enumerator
         .get_default_device_for_role(&Direction::Render, &Role::Console)
         .map_err(|_| "no speaker or headphones are connected".to_string())?;
-    Ok(Choice {
+    let default = Target {
         device_id: device.get_id().map_err(s)?,
         device_name: device.get_friendlyname().unwrap_or_else(|_| "Speaker".into()),
         app: None,
-    })
+    };
+    Ok((candidates, default))
 }
 
 /// Executable name and parent of each process and its ancestors.
