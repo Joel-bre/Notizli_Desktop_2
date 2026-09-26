@@ -82,6 +82,12 @@ CI (`.github/workflows/ci.yml`) runs the tests on all three systems and uploads
 the Windows installer, the macOS app and the Windows test tool as artifacts on
 every push. It never publishes a release.
 
+## Releasing
+
+Bump `version` in `Cargo.toml`, push, then run **Actions → Release (draft)**.
+It builds the Windows installer and the macOS .dmg and attaches them to a
+*draft* release; publish it by hand on GitHub when ready.
+
 ## Not done yet
 
 - **Signing.** Windows builds are unsigned (SmartScreen warns). macOS builds are
