@@ -11,6 +11,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same branch makes older runs pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -79,6 +84,11 @@ jobs:
       - name: Build the macOS app (ad-hoc signed)
         run: npx tauri build --bundles app,dmg
         working-directory: app
+      - name: Show what went into the app
+        run: |
+          plutil -p target/release/bundle/macos/Notizli.app/Contents/Info.plist
+          codesign -dv --entitlements - target/release/bundle/macos/Notizli.app 2>&1 || true
+          lipo -info target/release/bundle/macos/Notizli.app/Contents/MacOS/Notizli
       - name: Pack the app (artifacts drop file permissions; a tarball keeps them)
         run: tar -czf Notizli-macOS.tar.gz -C target/release/bundle/macos Notizli.app
       - uses: actions/upload-artifact@v4
