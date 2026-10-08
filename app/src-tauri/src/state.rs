@@ -9,7 +9,7 @@ use std::time::Instant;
 use notizli_core::account::{self, Settings, SettingsFile};
 use notizli_core::api::{Api, PairPreview};
 use notizli_core::store::{Meta, Store};
-use notizli_engine::Recorder;
+use notizli_engine::{CallWatcher, Recorder};
 use serde::Serialize;
 
 pub struct AppState {
@@ -24,6 +24,8 @@ pub struct AppState {
     pub recording: Mutex<Option<Active>>,
     pub pair: Mutex<Option<PendingPair>>,
     pub upload: UploadState,
+    /// Call detection: when to ask "Record this call?" (see detect.rs).
+    pub watcher: Mutex<CallWatcher>,
 }
 
 pub struct Active {
@@ -79,6 +81,7 @@ impl AppState {
             recording: Mutex::new(None),
             pair: Mutex::new(None),
             upload: UploadState::default(),
+            watcher: Mutex::new(CallWatcher::default()),
         })
     }
 

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Notizli</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <style>
+    body { padding: 0; background: var(--paper); overflow: hidden; }
+    .box { border: 1px solid var(--ink); height: 100vh; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+    .head { font-family: var(--font-display); font-weight: 600; font-size: 12px; letter-spacing: -0.01em; }
+    .head .accent { color: var(--signal); }
+    #title { font-weight: 500; }
+    #question { color: var(--ink-muted); }
+    .actions { display: flex; gap: 8px; margin-top: auto; }
+    .actions button { flex: 1; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="head">Notizli<span class="accent">.</span></div>
+    <div id="title"></div>
+    <div id="question"></div>
+    <div class="actions">
+      <button class="primary" id="yes"></button>
+      <button id="no"></button>
+    </div>
+  </div>
+  <script src="./prompt.js"></script>
+</body>
+</html>

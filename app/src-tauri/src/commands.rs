@@ -14,6 +14,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
+use crate::prompt;
 use crate::state::{Active, AppState, Awake, Labels, PendingPair};
 
 type Res<T> = Result<T, String>;
@@ -144,12 +145,31 @@ pub fn changed(app: &AppHandle) {
     let _ = app.emit("state", ());
 }
 
-fn focus(app: &AppHandle) {
+/// Show the window and bring it to the front.
+pub fn focus(app: &AppHandle) {
+    set_dock(app, true);
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
     }
+}
+
+/// Show the window without taking the keyboard from the call.
+pub fn reveal(app: &AppHandle) {
+    set_dock(app, true);
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.show();
+    }
+}
+
+/// macOS: the Dock icon only while the window is open.
+pub fn set_dock(app: &AppHandle, visible: bool) {
+    #[cfg(target_os = "macos")]
+    let _ = app.set_dock_visibility(visible);
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, visible);
 }
 
 // ---- microphone -------------------------------------------------------------
@@ -258,10 +278,18 @@ pub fn unpair(app: AppHandle, state: State<'_, AppState>) -> Res<()> {
 
 // ---- recording ----------------------------------------------------------------
 
-fn default_title() -> String {
+fn now_text() -> String {
     let now = time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
     let f = time::macros::format_description!("[day] [month repr:short] [year], [hour]:[minute]");
-    format!("Desktop recording — {}", now.format(&f).unwrap_or_default())
+    now.format(&f).unwrap_or_default()
+}
+
+fn default_title() -> String {
+    format!("Desktop recording — {}", now_text())
+}
+
+fn call_title(app: &str) -> String {
+    format!("{app} call — {}", now_text())
 }
 
 #[tauri::command]
@@ -318,7 +346,7 @@ pub async fn start_recording(app: AppHandle, title: Option<String>) -> Res<Recor
     Ok(view)
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct FinishView {
     id: String,
     title: String,
@@ -387,6 +415,76 @@ pub async fn quit_app(app: AppHandle) -> Res<()> {
     }
     app.exit(0);
     Ok(())
+}
+
+// ---- call detection -----------------------------------------------------------
+
+#[tauri::command]
+pub fn prompt_view(app: AppHandle) -> Option<prompt::View> {
+    prompt::current(&app)
+}
+
+/// "Record" in the box.
+#[tauri::command]
+pub async fn prompt_record(app: AppHandle) -> Res<()> {
+    let user = app.state::<AppState>().watcher.lock().unwrap().answered();
+    prompt::hide(&app);
+    let name = user.map(|u| u.app).unwrap_or_else(|| "Call".into());
+    log::info!("record ({name})");
+    match start_recording(app.clone(), Some(call_title(&name))).await {
+        Ok(_) => {
+            reveal(&app);
+            Ok(())
+        }
+        Err(e) => {
+            focus(&app);
+            notice(&app, e.clone());
+            Err(e)
+        }
+    }
+}
+
+/// "Not now" in the box.
+#[tauri::command]
+pub fn prompt_dismiss(app: AppHandle) {
+    if let Some(u) = app.state::<AppState>().watcher.lock().unwrap().answered() {
+        log::info!("not now ({})", u.app);
+    }
+    prompt::hide(&app);
+}
+
+/// "Keep recording" in the countdown.
+#[tauri::command]
+pub fn prompt_keep(app: AppHandle) {
+    app.state::<AppState>().watcher.lock().unwrap().stop_countdown();
+    log::info!("keep recording");
+    prompt::hide(&app);
+}
+
+/// "Finish now" in the countdown.
+#[tauri::command]
+pub fn prompt_finish_now(app: AppHandle) {
+    app.state::<AppState>().watcher.lock().unwrap().stop_countdown();
+    log::info!("finish now");
+    prompt::hide(&app);
+    finish_in_background(&app);
+}
+
+/// Finish without the window asking (countdown, tray menu). The window
+/// learns the result from the "finished" event.
+pub fn finish_in_background(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        match finish_recording(app.clone()).await {
+            Ok(view) => {
+                let _ = app.emit("finished", view);
+            }
+            Err(e) => {
+                log::warn!("finishing: {e}");
+                notice(&app, e);
+            }
+        }
+    });
 }
 
 // ---- unsent recordings --------------------------------------------------------

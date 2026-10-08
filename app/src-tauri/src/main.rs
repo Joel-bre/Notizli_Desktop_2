@@ -6,7 +6,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod detect;
 mod logfile;
+mod prompt;
 mod state;
 mod uploader;
 
@@ -19,16 +21,11 @@ fn main() {
     let app = tauri::Builder::default()
         // Must be first: a second launch (e.g. a notizli-sh:// link on
         // Windows) hands its link to this instance instead of opening a window.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.unminimize();
-                let _ = w.show();
-                let _ = w.set_focus();
-            }
-        }))
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| commands::focus(app)))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .manage(prompt::PromptState::default())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             logfile::init(&data_dir.join("logs"));
@@ -58,6 +55,7 @@ fn main() {
             }
 
             uploader::spawn(app.handle().clone());
+            detect::spawn(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -87,6 +85,11 @@ fn main() {
             commands::save_copy,
             commands::discard_unsent,
             commands::open_diagnostics,
+            commands::prompt_view,
+            commands::prompt_record,
+            commands::prompt_dismiss,
+            commands::prompt_keep,
+            commands::prompt_finish_now,
         ])
         .build(tauri::generate_context!())
         .expect("error while starting Notizli");

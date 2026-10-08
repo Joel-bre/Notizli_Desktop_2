@@ -400,29 +400,35 @@ async function finishRecording() {
   $("upload-fill").style.width = "0%";
   show("s-uploading");
   try {
-    const r = await invoke("finish_recording");
-    $("meeting-name").value = "";
-    lastCheck = { id: r.id, ok: r.heard_ok, text: r.verdict };
-    if (r.saved_elsewhere) {
-      mode = {
-        error: {
-          title: "Saved outside Notizli's folder",
-          message: `The disk failed during the recording, so it was saved here instead: ${r.saved_elsewhere}`,
-          note: "Upload it on notizli.ch, or keep the file.",
-        },
-      };
-    } else if (!r.paired) {
-      mode = { done: { id: r.id, meeting_id: null } };
-    } else {
-      mode = { uploading: r.id };
-    }
+    applyFinish(await invoke("finish_recording"));
   } catch (e) {
+    // Finished at the same moment from the countdown or the menu: the "finished" event shows it.
+    if (errText(e) === "Not recording.") return;
     mode = { error: { title: "The recording could not be finished", message: errText(e) } };
   } finally {
     $("stop-btn").disabled = false;
   }
   await refresh();
   settleUpload();
+}
+
+// The recording was finished (here, by the countdown or from the menu).
+function applyFinish(r) {
+  $("meeting-name").value = "";
+  lastCheck = { id: r.id, ok: r.heard_ok, text: r.verdict };
+  if (r.saved_elsewhere) {
+    mode = {
+      error: {
+        title: "Saved outside Notizli's folder",
+        message: `The disk failed during the recording, so it was saved here instead: ${r.saved_elsewhere}`,
+        note: "Upload it on notizli.ch, or keep the file.",
+      },
+    };
+  } else if (!r.paired) {
+    mode = { done: { id: r.id, meeting_id: null } };
+  } else {
+    mode = { uploading: r.id };
+  }
 }
 
 // The upload may already have finished while the window was busy.
@@ -515,6 +521,11 @@ listen("upload", ({ payload: u }) => {
   refreshSoon();
 });
 
+listen("finished", async ({ payload }) => {
+  applyFinish(payload);
+  await refresh();
+  settleUpload();
+});
 listen("pair-request", ({ payload }) => askPair(payload));
 listen("notice", ({ payload }) => toast(payload.text));
 listen("state", () => refreshSoon());
