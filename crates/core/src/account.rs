@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 const SERVICE: &str = "ch.notizli.recorder";
 const TOKEN_USER: &str = "device-token";
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
     /// The account this recorder is paired with (shown, never used to authenticate).
     #[serde(default)]
@@ -23,6 +23,22 @@ pub struct Settings {
     /// Microphone device id; None follows the system default.
     #[serde(default)]
     pub mic_device: Option<String>,
+    /// Ask "Record this call?" when a call app or browser uses the microphone.
+    #[serde(default = "yes")]
+    pub ask_on_calls: bool,
+    /// Start at login; `None` until decided (turned on at the first start).
+    #[serde(default)]
+    pub open_at_login: Option<bool>,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings { paired_email: None, device_label: None, upload_url: None, mic_device: None, ask_on_calls: true, open_at_login: None }
+    }
 }
 
 pub struct SettingsFile(PathBuf);
@@ -68,5 +84,18 @@ pub fn delete_token() -> Result<(), String> {
     match entry()?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(e.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_settings_ask_on_calls() {
+        assert!(Settings::default().ask_on_calls);
+        let old: Settings = serde_json::from_str(r#"{"paired_email":"a@b.ch"}"#).unwrap();
+        assert!(old.ask_on_calls);
+        assert_eq!(old.open_at_login, None);
     }
 }
