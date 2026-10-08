@@ -26,6 +26,7 @@ fn main() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .manage(prompt::PromptState::default())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
@@ -34,6 +35,14 @@ fn main() {
             let state = AppState::new(&data_dir)?;
             let recovered = state.store.recover();
             app.manage(state);
+            // First start of a release build: open at login, as agreed.
+            // Never for development builds (it would register target/debug).
+            let undecided = app.state::<AppState>().settings.lock().unwrap().open_at_login.is_none();
+            if undecided && !cfg!(debug_assertions) {
+                if let Err(e) = commands::apply_open_at_login(app.handle(), true) {
+                    log::warn!("{e}");
+                }
+            }
             for r in &recovered {
                 log::info!("recovered interrupted recording {} ({} ms)", r.id, r.duration_ms);
             }
@@ -96,6 +105,8 @@ fn main() {
             commands::save_copy,
             commands::discard_unsent,
             commands::open_diagnostics,
+            commands::set_ask_on_calls,
+            commands::set_open_at_login,
             commands::prompt_view,
             commands::prompt_record,
             commands::prompt_dismiss,

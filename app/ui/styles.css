@@ -224,3 +224,6 @@ button.link:hover { background: none; color: var(--ink); }
 .version button.link { font-size: 10.5px; }
 
 [hidden] { display: none !important; }
+
+label.check-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; cursor: pointer; }
+label.check-row input { accent-color: var(--signal); }

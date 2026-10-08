@@ -206,6 +206,8 @@ function renderIdle() {
     S.os === "macos"
       ? "The first time you record, macOS asks to allow the Microphone and System Audio Recording. Both are needed to record the two sides."
       : "Nothing to set up: Notizli records your microphone and the speaker your meeting app plays on.";
+  $("ask-on-calls").checked = S.ask_on_calls;
+  $("open-at-login").checked = S.open_at_login;
   if (!micsLoaded) loadMics();
 }
 
@@ -571,6 +573,12 @@ $("error-back-btn").onclick = () => {
   refresh();
 };
 $("diagnostics-btn").onclick = () => invoke("open_diagnostics").catch((e) => toast(errText(e)));
+$("ask-on-calls").onchange = () => invoke("set_ask_on_calls", { on: $("ask-on-calls").checked }).catch((e) => toast(errText(e)));
+$("open-at-login").onchange = () =>
+  invoke("set_open_at_login", { on: $("open-at-login").checked }).catch((e) => {
+    toast(errText(e));
+    refresh();
+  });
 $("device").onchange = () => invoke("set_mic", { device: $("device").value || null });
 $("unpair-btn").onclick = async () => {
   const ok = await confirmDialog({

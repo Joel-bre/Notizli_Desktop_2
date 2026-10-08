@@ -28,6 +28,8 @@ pub struct StateView {
     label: Option<String>,
     token_error: Option<String>,
     mic_device: Option<String>,
+    ask_on_calls: bool,
+    open_at_login: bool,
     recording: Option<RecordingView>,
     unsent: Vec<UnsentView>,
     upload: Option<UploadView>,
@@ -101,6 +103,8 @@ pub fn get_state(app: AppHandle, state: State<'_, AppState>) -> StateView {
         label: settings.device_label.clone(),
         token_error: state.token_error.lock().unwrap().clone(),
         mic_device: settings.mic_device.clone(),
+        ask_on_calls: settings.ask_on_calls,
+        open_at_login: settings.open_at_login.unwrap_or(false),
         recording,
         unsent: state
             .store
@@ -415,6 +419,32 @@ pub async fn quit_app(app: AppHandle) -> Res<()> {
         finish_recording(app.clone()).await?;
     }
     app.exit(0);
+    Ok(())
+}
+
+// ---- settings -------------------------------------------------------------------
+
+#[tauri::command]
+pub fn set_ask_on_calls(app: AppHandle, state: State<'_, AppState>, on: bool) {
+    state.update_settings(|s| s.ask_on_calls = on);
+    log::info!("ask to record when a call starts: {on}");
+    changed(&app);
+}
+
+#[tauri::command]
+pub fn set_open_at_login(app: AppHandle, on: bool) -> Res<()> {
+    apply_open_at_login(&app, on)?;
+    changed(&app);
+    Ok(())
+}
+
+/// Register (or remove) Notizli as a login item, started with --hidden.
+pub fn apply_open_at_login(app: &AppHandle, on: bool) -> Res<()> {
+    use tauri_plugin_autostart::ManagerExt;
+    let launcher = app.autolaunch();
+    if on { launcher.enable() } else { launcher.disable() }.map_err(|e| format!("Couldn't change the login item: {e}"))?;
+    app.state::<AppState>().update_settings(|s| s.open_at_login = Some(on));
+    log::info!("open at login: {on}");
     Ok(())
 }
 
