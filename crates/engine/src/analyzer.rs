@@ -234,14 +234,18 @@ impl Analyzer {
             stats: o.stats(),
         });
         let mic_silent = mic.active_s == 0 && duration_s >= 30;
+        let other_silent = other.as_ref().is_none_or(|o| o.active_s == 0);
         let (ok, verdict) = match &other {
-            _ if mic_silent && other.as_ref().is_none_or(|o| o.active_s == 0) => {
+            _ if mic.active_s == 0 && other_silent => {
                 (false, "Nothing was heard on either side. Check the microphone and that the call played on this computer.".to_string())
             }
             _ if mic_silent => (false, "Your microphone didn't pick up anyone talking. Check the microphone (and its permission).".to_string()),
             None => (false, "Microphone only: the other side of the call could not be recorded.".to_string()),
             Some(o) if o.active_s == 0 && mic.active_s >= 30 => {
                 (false, "The other side was never heard while the room talked. Check which speaker the call played on.".to_string())
+            }
+            Some(o) if o.active_s == 0 => {
+                (false, "The other side wasn't heard. If a call was playing, check that its sound played on this computer.".to_string())
             }
             Some(_) if self.longest_silent_talking_s >= WARN_AFTER_S => (
                 false,
@@ -313,6 +317,20 @@ mod tests {
         let (r, _) = run(60, false, |_| true);
         assert!(!r.ok);
         assert!(r.verdict.contains("microphone"), "{}", r.verdict);
+    }
+
+    #[test]
+    fn a_short_silent_recording_is_not_called_fine() {
+        let (r, _) = run(12, false, |_| false);
+        assert!(!r.ok);
+        assert!(r.verdict.contains("Nothing was heard"), "{}", r.verdict);
+    }
+
+    #[test]
+    fn a_short_recording_without_the_call_says_so() {
+        let (r, _) = run(20, true, |_| false);
+        assert!(!r.ok);
+        assert!(r.verdict.contains("other side wasn't heard"), "{}", r.verdict);
     }
 
     #[test]
