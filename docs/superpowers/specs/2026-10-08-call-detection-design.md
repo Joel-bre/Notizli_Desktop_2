@@ -41,9 +41,8 @@ browsers capture from child processes), as the speaker chooser already does.
 On macOS the match is on the bundle id, with helper ids mapped to their app
 (`com.google.Chrome.helper` → Google Chrome; `com.apple.WebKit.GPU` → Safari).
 
-The app lists for Windows (`MEETING_APPS`, `BROWSERS` in
-`capture/windows.rs`) move to one shared module used by both the speaker
-chooser and detection, with the macOS bundle ids next to them.
+The Windows app lists stay in `capture/windows.rs` (detection reuses its
+`classify`); the macOS bundle ids live in `detect.rs`, unit-tested on every OS.
 
 ## Components
 
@@ -64,7 +63,7 @@ chooser and detection, with the macOS bundle ids next to them.
    Holds the timings (10 s to ask, 60 s prompt lifetime, 5 s grace at the end)
    and the "already asked for this app" memory. Unit-tested with a fake clock
    on every OS.
-3. **Detector thread** (app, `src-tauri/src/detect.rs`): every 2 s calls
+3. **Detector thread** (app, `src-tauri/src/detect.rs`): every second calls
    `mic_users()`, feeds `CallWatcher`, and acts on events: shows/hides the
    prompt window, starts a recording (title `"<App> call — <date, time>"`), or
    starts the end countdown. Runs only while paired and the setting is on.
@@ -75,7 +74,7 @@ chooser and detection, with the macOS bundle ids next to them.
    content-protected so it is hidden from screen sharing where the OS allows
    it. Two modes: *ask* and *countdown*. Buttons call commands
    (`prompt_record`, `prompt_dismiss`, `prompt_finish_now`, `prompt_keep`).
-   Its own capability file allows only those.
+   Its own capability file grants events only.
 5. **Tray / menu bar** (Tauri `tray-icon` feature): Start recording (or
    Finish recording while recording), Open Notizli, Quit. Quit while recording
    asks first, as today.
@@ -88,8 +87,8 @@ chooser and detection, with the macOS bundle ids next to them.
 
 ## Behaviour details
 
-- *Record* in the box: starts recording, hides the box, opens the main window
-  without stealing focus from the call where possible (it shows the timer).
+- *Record* in the box: starts recording, hides the box, shows the main window
+  without focusing it (it shows the timer).
 - If the app releases the microphone while the *ask* box is showing, the box
   closes (`HidePrompt`).
 - The end countdown is shown in the box; *Keep recording* lets the recording

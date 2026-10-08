@@ -20,7 +20,7 @@ To try it: [TESTING.md](TESTING.md).
 | `crates/engine` | Recording engine: capture per platform, mixer, Opus encoder, crash-safe WebM writer, health report. |
 | `crates/core` | notizli.ch API (pairing, upload), pairing links, device token in the OS credential store, the queue of recordings waiting for upload. |
 | `crates/rec-cli` | `notizli-rec`: records to a file and prints a plain result. A hardware check without the app; `record-test.bat` runs it by double-click on Windows. |
-| `app/src-tauri` | The app's Rust side: commands for the window, uploader, deep links, keep-awake, quit guard. |
+| `app/src-tauri` | The app's Rust side: commands for the window, uploader, deep links, keep-awake, quit guard, call detection, the "Record this call?" box, the menu bar icon. |
 | `app/ui` | The window: plain HTML/CSS/JS in the Notizli brand (no framework, no build step). |
 
 ## How recording works
@@ -50,6 +50,31 @@ To try it: [TESTING.md](TESTING.md).
 - **Health report.** Every recording gets `<id>.health.json`: levels of both
   sides every 10 s, what was being recorded, device switches, gaps, and a plain
   verdict. It contains no audio and no words.
+
+## Call detection
+
+Notizli starts at login and lives in the menu bar / notification area
+(closing the window hides it). Once a second it asks the system which apps
+are using a microphone: Core Audio's process list on macOS, the active audio
+sessions on every microphone on Windows. No permission is needed, and it never
+looks at window titles, websites or sound.
+
+- A call app (Teams, Zoom, Webex, Slack, WhatsApp, Discord, Skype, FaceTime)
+  or a browser holding the microphone for 10 s while not recording: a small
+  box at the top right asks "You're in a call (Zoom). Record it?" (Record /
+  Not now, gone after 60 s, asked once per call).
+- While recording, when every call app and browser has let go for 5 s: "The
+  call ended. Finishing in 60 seconds" (Finish now / Keep recording); with no
+  answer it finishes and uploads. A recording without a call never ends by
+  itself.
+- It never records without a click (Swiss law requires consent).
+- Switches in the window: "Ask me to record when a call starts", "Open
+  Notizli when I log in" (both on by default). Only while paired.
+- `notizli-rec calls` prints what detection sees, for checking a computer.
+- Debug builds: `NOTIZLI_FAKE_CALL=<seconds>` pretends Zoom holds the
+  microphone for that long, to try the box without a call.
+
+Design: `docs/superpowers/specs/2026-10-08-call-detection-design.md`.
 
 ## Server contract (unchanged)
 

@@ -77,6 +77,30 @@ column with numbers around -20 to -50 while the other side talked
 
 ---
 
+## D. Call detection (Mac and Windows)
+
+Notizli now starts with the computer and has an icon in the menu bar (Mac) or
+next to the clock (Windows). Closing its window only hides it.
+
+1. Join a Teams or Zoom call (the app, not the browser). After about 10
+   seconds a small box appears at the top right: **"You're in a call (…).
+   Record it?"**. Click **Record**.
+2. Talk for a minute, then leave the call. About 5 seconds later the box says
+   **"The call ended. Finishing in 60 seconds"**. Let it run out: the
+   recording finishes and uploads by itself.
+3. Join another call and click **Not now**: it must not ask again during that
+   call.
+4. Try a call in the browser (Google Meet in Chrome, or Teams in Safari): the
+   box says "Your browser (…) is using the microphone".
+5. Start a recording during a call, leave the call, and click **Keep
+   recording** in the countdown: the recording continues.
+6. Share your screen in a call while the box is showing, and ask the other
+   person whether they can see the box (they shouldn't).
+7. Restart the computer: the Notizli icon must be there without opening it.
+
+Windows: `notizli-rec calls` (in the test tool's folder, from a command
+prompt) prints which call apps it sees using the microphone.
+
 ## If something goes wrong
 
 Click **Diagnostics** (bottom left, next to the version). It opens a folder
