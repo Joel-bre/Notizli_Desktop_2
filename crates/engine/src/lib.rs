@@ -28,7 +28,7 @@ mod source;
 pub mod webm;
 
 pub use analyzer::{HealthPoint, HealthReport, SourceSummary};
-pub use capture::{input_devices, request_microphone_access, InputDevice};
+pub use capture::{input_devices, mic_users, request_microphone_access, InputDevice};
 pub use detect::{classify_bundle, AppKind, CallWatcher, MicUser, WatchEvent};
 pub use error::Error;
 pub use recorder::{ChannelLayout, Recorder, RecorderConfig, RecorderEvent, Recording};

@@ -4,6 +4,7 @@
 //!
 //!   notizli-rec record [--minutes N] [--out DIR] [--mic DEVICE_ID] [--mic-only]
 //!   notizli-rec devices
+//!   notizli-rec calls
 
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
@@ -19,9 +20,10 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let code = match args.first().map(String::as_str) {
         Some("devices") => devices(),
+        Some("calls") => calls(),
         Some("record") | None => record(&args[args.len().min(1)..]),
         _ => {
-            eprintln!("usage: notizli-rec record [--minutes N] [--out DIR] [--mic DEVICE_ID] [--mic-only]\n       notizli-rec devices");
+            eprintln!("usage: notizli-rec record [--minutes N] [--out DIR] [--mic DEVICE_ID] [--mic-only]\n       notizli-rec devices\n       notizli-rec calls");
             2
         }
     };
@@ -41,6 +43,21 @@ fn devices() -> i32 {
             1
         }
     }
+}
+
+/// Show which call apps and browsers use the microphone (call detection).
+fn calls() -> i32 {
+    println!("Apps using the microphone (call apps and browsers), for 2 minutes:");
+    let mut last = None;
+    for _ in 0..120 {
+        let now: Vec<String> = notizli_engine::mic_users().into_iter().map(|u| format!("{} ({:?})", u.app, u.kind)).collect();
+        if last.as_ref() != Some(&now) {
+            println!("{}", if now.is_empty() { "  none".to_string() } else { format!("  {}", now.join(", ")) });
+            last = Some(now);
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    0
 }
 
 #[derive(Default)]

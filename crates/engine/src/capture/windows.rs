@@ -26,6 +26,7 @@ use wasapi::{
 
 use super::choose::{Candidate, Chooser, Target};
 use super::{downmix, sleep_unless, Capture, InputDevice, ThreadCapture};
+use crate::detect::{dedupe, AppKind, MicUser};
 use crate::error::Error;
 use crate::recorder::{Events, RecorderEvent};
 use crate::source::Source;
@@ -87,6 +88,43 @@ pub fn input_devices() -> Result<Vec<InputDevice>, Error> {
         out.push(InputDevice { is_default: default_id.as_deref() == Some(id.as_str()), id, name });
     }
     Ok(out)
+}
+
+/// Call apps and browsers capturing from any microphone now: the active
+/// audio sessions on every capture endpoint. Notizli itself is skipped.
+pub fn mic_users() -> Vec<MicUser> {
+    com();
+    let own_pid = std::process::id();
+    let Ok(enumerator) = DeviceEnumerator::new() else { return Vec::new() };
+    let mut pids = Vec::new();
+    if let Ok(devices) = enumerator.get_device_collection(&Direction::Capture) {
+        for device in &devices {
+            let Ok(device) = device else { continue };
+            let Ok(manager) = device.get_iaudiosessionmanager() else { continue };
+            let Ok(list) = manager.get_audiosessionenumerator() else { continue };
+            for i in 0..list.get_count().unwrap_or(0) {
+                let Ok(control) = list.get_session(i) else { continue };
+                if control.get_state().ok() != Some(SessionState::Active) {
+                    continue;
+                }
+                let pid = control.get_process_id().unwrap_or(0);
+                if pid != 0 && pid != own_pid {
+                    pids.push(pid);
+                }
+            }
+        }
+    }
+    let mut system = System::new();
+    let names = process_names(&mut system, pids.iter().copied());
+    let users = pids
+        .into_iter()
+        .filter_map(|pid| match classify(&names, pid, own_pid) {
+            (0, Some(app)) => Some(MicUser { app, kind: AppKind::Call }),
+            (1, Some(app)) => Some(MicUser { app, kind: AppKind::Browser }),
+            _ => None,
+        })
+        .collect();
+    dedupe(users)
 }
 
 /// A running shared-mode capture stream, delivered as mono 48 kHz.

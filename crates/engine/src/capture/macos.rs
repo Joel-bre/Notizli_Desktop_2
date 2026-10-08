@@ -25,6 +25,7 @@ use objc2_core_audio::{
     kAudioAggregateDeviceTapListKey, kAudioAggregateDeviceUIDKey, kAudioDevicePropertyDeviceIsAlive, kAudioDevicePropertyDeviceUID,
     kAudioDevicePropertyNominalSampleRate, kAudioDevicePropertyStreamConfiguration, kAudioDevicePropertyStreamFormat,
     kAudioHardwarePropertyDefaultInputDevice, kAudioHardwarePropertyDefaultOutputDevice, kAudioHardwarePropertyDevices,
+    kAudioHardwarePropertyProcessObjectList, kAudioProcessPropertyBundleID, kAudioProcessPropertyIsRunningInput, kAudioProcessPropertyPID,
     kAudioObjectPropertyElementMain, kAudioObjectPropertyName, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyScopeInput,
     kAudioObjectSystemObject, kAudioSubDeviceUIDKey, kAudioSubTapDriftCompensationKey, kAudioSubTapUIDKey, AudioDeviceCreateIOProcID,
     AudioDeviceDestroyIOProcID, AudioDeviceIOProcID, AudioDeviceStart, AudioDeviceStop, AudioHardwareCreateAggregateDevice,
@@ -36,6 +37,7 @@ use objc2_core_foundation::{CFDictionary, CFRetained, CFString};
 use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSString, NSUUID};
 
 use super::{sleep_unless, Capture, InputDevice, ThreadCapture};
+use crate::detect::{classify_bundle, dedupe, MicUser};
 use crate::error::Error;
 use crate::recorder::{Events, RecorderEvent};
 use crate::source::Source;
@@ -110,11 +112,30 @@ fn get_bytes(object: AudioObjectID, selector: u32, scope: u32) -> Result<Vec<u64
     Ok(buf)
 }
 
-fn devices() -> Vec<AudioObjectID> {
-    let Ok(buf) = get_bytes(system(), kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal) else { return Vec::new() };
+/// An AudioObjectID list property of the system object.
+fn object_list(selector: u32) -> Vec<AudioObjectID> {
+    let Ok(buf) = get_bytes(system(), selector, kAudioObjectPropertyScopeGlobal) else { return Vec::new() };
     // SAFETY: the property is an array of AudioObjectID (u32).
     let ids = unsafe { std::slice::from_raw_parts(buf.as_ptr().cast::<AudioObjectID>(), buf.len() * 2) };
     ids.iter().copied().filter(|id| *id != 0).collect()
+}
+
+fn devices() -> Vec<AudioObjectID> {
+    object_list(kAudioHardwarePropertyDevices)
+}
+
+/// Call apps and browsers using any microphone now (Core Audio process
+/// objects, macOS 14+; no permission needed). Notizli itself is skipped.
+pub fn mic_users() -> Vec<MicUser> {
+    let own = std::process::id() as i32;
+    let users = object_list(kAudioHardwarePropertyProcessObjectList)
+        .into_iter()
+        .filter(|p| get::<u32>(*p, kAudioProcessPropertyIsRunningInput, kAudioObjectPropertyScopeGlobal).is_ok_and(|v| v != 0))
+        .filter(|p| get::<i32>(*p, kAudioProcessPropertyPID, kAudioObjectPropertyScopeGlobal).is_ok_and(|pid| pid != own))
+        .filter_map(|p| get_string(p, kAudioProcessPropertyBundleID, kAudioObjectPropertyScopeGlobal).ok())
+        .filter_map(|id| classify_bundle(&id))
+        .collect();
+    dedupe(users)
 }
 
 fn input_channels(device: AudioObjectID) -> u32 {
@@ -517,5 +538,25 @@ fn call_thread(source: Arc<Source>, events: &Events, stop: &AtomicBool, ready: &
             }
         }
         drop(tap);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use objc2_core_audio::kAudioProcessPropertyIsRunningOutput;
+
+    /// Manual check: `cargo test -p notizli-engine list_audio_processes -- --ignored --nocapture`
+    /// lists every process Core Audio knows, with whether it records or plays.
+    #[test]
+    #[ignore]
+    fn list_audio_processes() {
+        for p in object_list(kAudioHardwarePropertyProcessObjectList) {
+            let flag = |sel| get::<u32>(p, sel, kAudioObjectPropertyScopeGlobal).map(|v| v != 0).unwrap_or(false);
+            let bundle = get_string(p, kAudioProcessPropertyBundleID, kAudioObjectPropertyScopeGlobal).unwrap_or_default();
+            let pid = get::<i32>(p, kAudioProcessPropertyPID, kAudioObjectPropertyScopeGlobal).unwrap_or(-1);
+            println!("{pid:>6} in={} out={} {bundle}", flag(kAudioProcessPropertyIsRunningInput), flag(kAudioProcessPropertyIsRunningOutput));
+        }
+        println!("mic users: {:?}", mic_users());
     }
 }

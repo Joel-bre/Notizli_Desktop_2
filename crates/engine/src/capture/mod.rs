@@ -42,6 +42,16 @@ pub fn input_devices() -> Result<Vec<InputDevice>, Error> {
     Err(Error::Unsupported("recording is only available on Windows and macOS"))
 }
 
+/// Call apps and browsers using a microphone right now (empty where unsupported).
+pub fn mic_users() -> Vec<crate::detect::MicUser> {
+    #[cfg(windows)]
+    return windows::mic_users();
+    #[cfg(target_os = "macos")]
+    return macos::mic_users();
+    #[cfg(not(any(windows, target_os = "macos")))]
+    Vec::new()
+}
+
 /// Ask for microphone access where the system requires it (macOS), waiting
 /// for the user's answer. `Ok(false)` means the user said no (or said no before).
 pub fn request_microphone_access() -> Result<bool, Error> {
