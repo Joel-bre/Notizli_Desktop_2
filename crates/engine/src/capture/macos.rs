@@ -503,8 +503,16 @@ fn call_thread(source: Arc<Source>, events: &Events, stop: &AtomicBool, ready: &
             sleep_unless(stop, CHECK_EVERY);
             let output_changed = default_device(kAudioHardwarePropertyDefaultOutputDevice).is_some_and(|d| d != tap.output);
             let stalled = tap.run.as_ref().is_some_and(|r| watch.stalled(r.callbacks()));
-            if output_changed || stalled {
-                log::info!("rebuilding the system audio tap");
+            if output_changed {
+                log::info!("rebuilding the system audio tap: the output device changed");
+                break;
+            }
+            if stalled {
+                if watch.last_count == 0 {
+                    log::info!("rebuilding the system audio tap: no sound delivered yet (is the System Audio Recording permission still being asked, or denied?)");
+                } else {
+                    log::info!("rebuilding the system audio tap: it stopped delivering sound");
+                }
                 break;
             }
         }

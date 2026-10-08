@@ -32,7 +32,8 @@ pub struct SourceStats {
     pub dropped_ms: u64,
     /// Times the capture was (re)opened, e.g. after a device change.
     pub opens: u64,
-    /// Samples delivered by the device (after resampling to 48 kHz).
+    /// Samples delivered by the device since the recording started (after
+    /// resampling to 48 kHz).
     pub samples: u64,
 }
 
@@ -100,6 +101,16 @@ impl Source {
         g.primed = false;
         g.label = label.to_string();
         g.stats.opens += 1;
+    }
+
+    /// The recording starts now: forget what the device captured while the
+    /// other devices were still opening (seconds, when macOS shows a permission
+    /// prompt), so both channels start together.
+    pub fn begin(&self) {
+        let mut g = self.inner.lock().unwrap();
+        g.buf.clear();
+        g.primed = false;
+        g.stats.samples = 0;
     }
 
     #[cfg_attr(not(windows), allow(dead_code))]
@@ -190,6 +201,21 @@ mod tests {
         s.take(&mut out, Instant::now());
         s.trim();
         assert_eq!(s.stats().dropped_ms, 10);
+    }
+
+    #[test]
+    fn audio_from_before_the_start_is_not_recorded() {
+        let s = Source::default();
+        s.push(&vec![0.7; 2_000 * MS], SAMPLE_RATE);
+        s.begin();
+        s.push(&vec![0.3; PRIME], SAMPLE_RATE);
+        let mut out = vec![0.0f32; 480];
+        s.take(&mut out, Instant::now());
+        assert!(out.iter().all(|x| *x == 0.3), "plays only what came after the start");
+        s.trim();
+        let stats = s.stats();
+        assert_eq!(stats.dropped_ms, 0);
+        assert_eq!(stats.samples, PRIME as u64);
     }
 
     #[test]

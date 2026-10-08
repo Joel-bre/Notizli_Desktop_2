@@ -26,6 +26,10 @@ pub fn run(
     stop: Arc<AtomicBool>,
 ) -> Analyzer {
     let channels = if other.is_some() { 2 } else { 1 };
+    mic.begin();
+    if let Some(o) = &other {
+        o.begin();
+    }
     let start = Instant::now();
     let mut emitted: u64 = 0;
     let mut mic_buf = vec![0f32; STEP];
