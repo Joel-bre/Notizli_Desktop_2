@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-const SERVICE: &str = "ch.notizli.recorder";
+/// Development builds keep their own pairing, so they never read (macOS would
+/// ask for the password) or overwrite the installed app's.
+const SERVICE: &str = if cfg!(debug_assertions) { "ch.notizli.recorder.dev" } else { "ch.notizli.recorder" };
 const TOKEN_USER: &str = "device-token";
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

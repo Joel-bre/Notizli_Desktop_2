@@ -24,7 +24,8 @@ fn run(app: &AppHandle, started: Instant) {
     loop {
         std::thread::sleep(EVERY);
         let state = app.state::<AppState>();
-        let enabled = state.token().is_some() && state.settings.lock().unwrap().ask_on_calls;
+        let fake = fake_users(started);
+        let enabled = (state.token().is_some() || fake.is_some()) && state.settings.lock().unwrap().ask_on_calls;
         if !enabled {
             *state.watcher.lock().unwrap() = CallWatcher::default();
             if prompt::current(app).is_some() {
@@ -32,7 +33,7 @@ fn run(app: &AppHandle, started: Instant) {
             }
             continue;
         }
-        let users = fake_users(started).unwrap_or_else(mic_users);
+        let users = fake.unwrap_or_else(mic_users);
         let names: Vec<String> = users.iter().map(|u| u.app.clone()).collect();
         if names != last {
             log::info!("using the microphone: {}", if names.is_empty() { "no call app or browser".to_string() } else { names.join(", ") });
@@ -61,7 +62,8 @@ fn run(app: &AppHandle, started: Instant) {
 }
 
 /// Debug builds only: `NOTIZLI_FAKE_CALL=<seconds>` pretends Zoom uses the
-/// microphone for that long after start, to try the box without a call.
+/// microphone for that long after start, to try the box without a call
+/// (also unpaired).
 #[cfg(debug_assertions)]
 fn fake_users(started: Instant) -> Option<Vec<MicUser>> {
     let secs: u64 = std::env::var("NOTIZLI_FAKE_CALL").ok()?.parse().ok()?;
