@@ -142,6 +142,7 @@ pub fn notice(app: &AppHandle, text: impl Into<String>) {
 }
 
 pub fn changed(app: &AppHandle) {
+    crate::tray::refresh(app);
     let _ = app.emit("state", ());
 }
 

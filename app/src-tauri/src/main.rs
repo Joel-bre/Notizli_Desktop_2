@@ -10,6 +10,7 @@ mod detect;
 mod logfile;
 mod prompt;
 mod state;
+mod tray;
 mod uploader;
 
 use tauri::{Emitter, Manager, RunEvent, WindowEvent};
@@ -56,13 +57,23 @@ fn main() {
 
             uploader::spawn(app.handle().clone());
             detect::spawn(app.handle().clone());
+            tray::create(app.handle())?;
+            // Started at login: stay in the menu bar / notification area.
+            if std::env::args().any(|a| a == "--hidden") {
+                commands::set_dock(app.handle(), false);
+            } else {
+                commands::focus(app.handle());
+            }
             Ok(())
         })
+        // Closing the window hides it; Notizli keeps running (and recording)
+        // in the menu bar / notification area.
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                if window.state::<AppState>().is_recording() {
+                if window.label() == "main" {
                     api.prevent_close();
-                    let _ = window.emit("confirm-quit", ());
+                    let _ = window.hide();
+                    commands::set_dock(window.app_handle(), false);
                 }
             }
         })
@@ -95,6 +106,11 @@ fn main() {
         .expect("error while starting Notizli");
 
     app.run(|app, event| {
+        // macOS: clicking the Dock icon brings the window back.
+        #[cfg(target_os = "macos")]
+        if let RunEvent::Reopen { .. } = &event {
+            commands::focus(app);
+        }
         // Cmd+Q / quitting from the dock while recording: ask first.
         if let RunEvent::ExitRequested { api, code, .. } = &event {
             if code.is_none() && app.state::<AppState>().is_recording() {
