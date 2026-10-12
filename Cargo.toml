@@ -6,7 +6,7 @@ members = ["crates/engine", "crates/core", "crates/rec-cli", "app/src-tauri"]
 default-members = ["crates/engine", "crates/core", "crates/rec-cli"]
 
 [workspace.package]
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 license = "UNLICENSED"
 publish = false

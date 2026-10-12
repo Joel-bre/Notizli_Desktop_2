@@ -2671,7 +2671,7 @@ dependencies = [
 
 [[package]]
 name = "notizli"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "keepawake",
  "log",
@@ -2693,7 +2693,7 @@ dependencies = [
 
 [[package]]
 name = "notizli-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "futures-util",
  "keyring",
@@ -2710,7 +2710,7 @@ dependencies = [
 
 [[package]]
 name = "notizli-engine"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "block2",
  "log",
@@ -2730,7 +2730,7 @@ dependencies = [
 
 [[package]]
 name = "notizli-rec"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "notizli-engine",
  "serde_json",
