@@ -20,6 +20,8 @@ permissions:
 jobs:
   build:
     strategy:
+      # A failing Mac build (e.g. notarization) must not cancel the Windows one.
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
