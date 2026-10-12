@@ -24,7 +24,7 @@ use wasapi::{
     StreamMode, WaveFormat,
 };
 
-use super::choose::{Candidate, Chooser, Target};
+use super::choose::{keep_for_call, Candidate, Chooser, Target};
 use super::{downmix, sleep_unless, Capture, InputDevice, ThreadCapture};
 use crate::detect::{dedupe, AppKind, MicUser};
 use crate::error::Error;
@@ -96,6 +96,14 @@ pub fn mic_users() -> Vec<MicUser> {
     com();
     let own_pid = std::process::id();
     let Ok(enumerator) = DeviceEnumerator::new() else { return Vec::new() };
+    let pids = capturing_pids(&enumerator, own_pid);
+    let mut system = System::new();
+    let names = process_names(&mut system, pids.iter().copied());
+    dedupe(pids.into_iter().filter_map(|pid| mic_user(&names, pid, own_pid)).collect())
+}
+
+/// Processes with an active session on any microphone (Notizli excluded).
+fn capturing_pids(enumerator: &DeviceEnumerator, own_pid: u32) -> Vec<u32> {
     let mut pids = Vec::new();
     if let Ok(devices) = enumerator.get_device_collection(&Direction::Capture) {
         for device in &devices {
@@ -114,17 +122,15 @@ pub fn mic_users() -> Vec<MicUser> {
             }
         }
     }
-    let mut system = System::new();
-    let names = process_names(&mut system, pids.iter().copied());
-    let users = pids
-        .into_iter()
-        .filter_map(|pid| match classify(&names, pid, own_pid) {
-            (0, Some(app)) => Some(MicUser { app, kind: AppKind::Call }),
-            (1, Some(app)) => Some(MicUser { app, kind: AppKind::Browser }),
-            _ => None,
-        })
-        .collect();
-    dedupe(users)
+    pids
+}
+
+fn mic_user(names: &HashMap<u32, (String, Option<u32>)>, pid: u32, own_pid: u32) -> Option<MicUser> {
+    match classify(names, pid, own_pid) {
+        (0, Some(app)) => Some(MicUser { app, kind: AppKind::Call }),
+        (1, Some(app)) => Some(MicUser { app, kind: AppKind::Browser }),
+        _ => None,
+    }
 }
 
 /// A running shared-mode capture stream, delivered as mono 48 kHz.
@@ -369,7 +375,9 @@ fn open_speaker(device_id: &str) -> Result<Stream, String> {
 }
 
 /// Every active playback session (with its app's priority) on every speaker,
-/// and the default speaker.
+/// and the default speaker. During a call (a call app or browser holding a
+/// microphone), other call apps and browsers are left out: their sounds are
+/// notifications, not the call.
 fn speaker_candidates(system: &mut System, own_pid: u32) -> Result<(Vec<Candidate>, Target), String> {
     let enumerator = DeviceEnumerator::new().map_err(s)?;
     let mut sessions: Vec<(String, String, u32, f32)> = Vec::new(); // device id, device name, pid, peak
@@ -395,7 +403,9 @@ fn speaker_candidates(system: &mut System, own_pid: u32) -> Result<(Vec<Candidat
         }
     }
 
-    let names = process_names(system, sessions.iter().map(|x| x.2));
+    let capturing = capturing_pids(&enumerator, own_pid);
+    let names = process_names(system, sessions.iter().map(|x| x.2).chain(capturing.iter().copied()));
+    let in_call: Vec<String> = capturing.iter().filter_map(|pid| mic_user(&names, *pid, own_pid)).map(|u| u.app).collect();
     let candidates = sessions
         .into_iter()
         .filter_map(|(device_id, device_name, pid, peak)| {
@@ -403,6 +413,7 @@ fn speaker_candidates(system: &mut System, own_pid: u32) -> Result<(Vec<Candidat
             (priority != u8::MAX).then_some(Candidate { device_id, device_name, priority, app, peak })
         })
         .collect();
+    let candidates = keep_for_call(candidates, &in_call);
     let device = enumerator
         .get_default_device_for_role(&Direction::Render, &Role::Console)
         .map_err(|_| "no speaker or headphones are connected".to_string())?;

@@ -409,6 +409,7 @@ pub async fn discard_recording(app: AppHandle) -> Res<()> {
     let state = app.state::<AppState>();
     let active = state.recording.lock().unwrap().take().ok_or("Not recording.")?;
     let Active { recorder, meta, .. } = active;
+    log::info!("recording {} discarded", meta.id);
     let _ = tauri::async_runtime::spawn_blocking(move || recorder.discard()).await;
     let _ = state.store.discard(&meta.id);
     changed(&app);

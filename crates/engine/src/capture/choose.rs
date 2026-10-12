@@ -140,6 +140,17 @@ impl Chooser {
     }
 }
 
+/// During a call (`in_call`: the call apps and browsers holding a microphone),
+/// other call apps and browsers are only notifications: drop them, so a Slack
+/// ping on the monitor never pulls the capture away from the call's speaker.
+/// Unrecognised apps stay (the call may play through a helper process).
+pub fn keep_for_call(mut candidates: Vec<Candidate>, in_call: &[String]) -> Vec<Candidate> {
+    if !in_call.is_empty() {
+        candidates.retain(|c| c.priority > 1 || c.app.as_ref().is_some_and(|a| in_call.contains(a)));
+    }
+    candidates
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -214,5 +225,31 @@ mod tests {
         assert_eq!((t.device_id.as_str(), open), ("speakers", false));
         let (t, _) = ch.decide(&[c("speakers", 2, "spotify", 0.5)], &default());
         assert_eq!(t.device_id, "speakers");
+    }
+
+    #[test]
+    fn during_a_call_other_apps_are_only_notifications() {
+        let in_call = vec!["Teams".to_string()];
+        let kept = keep_for_call(
+            vec![c("speakers", 0, "Teams", 0.0), c("monitor", 0, "Slack", 0.9), c("monitor", 1, "Chrome", 0.9), c("speakers", 2, "helper", 0.1)],
+            &in_call,
+        );
+        let apps: Vec<_> = kept.iter().map(|k| k.app.clone().unwrap()).collect();
+        assert_eq!(apps, vec!["Teams", "helper"]);
+        // Not in a call: nothing is dropped.
+        assert_eq!(keep_for_call(vec![c("monitor", 0, "Slack", 0.9)], &[]).len(), 1);
+    }
+
+    #[test]
+    fn a_slack_ping_on_the_monitor_never_moves_a_teams_call() {
+        let in_call = vec!["Teams".to_string()];
+        let mut ch = Chooser::default();
+        ch.decide(&keep_for_call(vec![c("speakers", 0, "Teams", 0.4)], &in_call), &default());
+        // The other side is quiet for a while and Slack keeps pinging on the monitor.
+        for _ in 0..10 {
+            let now = keep_for_call(vec![c("speakers", 0, "Teams", 0.0), c("monitor", 0, "Slack", 0.6)], &in_call);
+            let (t, open) = ch.decide(&now, &default());
+            assert_eq!((t.device_id.as_str(), open), ("speakers", false));
+        }
     }
 }
