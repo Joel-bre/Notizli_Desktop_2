@@ -76,6 +76,25 @@ looks at window titles, websites or sound.
 
 Design: `docs/superpowers/specs/2026-10-08-call-detection-design.md`.
 
+## Automatic updates
+
+Installed copies check the newest **published** release
+(`releases/latest/download/latest.json`) at start and every 6 hours, download
+it in the background, and show "Notizli X is ready → Restart to update" in
+the window and the menu bar / notification area menu (never while
+recording). Started at login, Notizli installs a waiting update right away.
+Drafts never reach anyone. Development builds don't update.
+
+Every update file is signed with the **update key**; the app only installs
+files signed with it (public half in `tauri.conf.json`, `plugins.updater`).
+The private half and its password are the secrets `TAURI_SIGNING_PRIVATE_KEY`
+and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, backed up in Joel's password
+manager. **If the key is lost, installed copies can never update again**
+(everyone would have to reinstall by hand). Each release needs a higher
+`version` in `Cargo.toml`.
+
+Design: `docs/superpowers/specs/2026-10-12-auto-update-design.md`.
+
 ## Server contract (unchanged)
 
 `POST /api/public/recorder/pair-preview`, `/pair` and `/upload` exactly as the
@@ -133,7 +152,10 @@ certificate (developer.apple.com → Certificates) and replace
 `APPLE_CERTIFICATE` and `APPLE_CERTIFICATE_PASSWORD`. Same Team ID, so users'
 permissions are kept.
 
-CI test builds stay ad-hoc signed (fast, no Apple round trip).
+CI test builds stay ad-hoc signed (fast, no Apple round trip) and contain no
+update files. The release also needs the two update-key secrets (see
+Automatic updates) and attaches `Notizli.app.tar.gz` and `latest.json`, which
+installed copies use to update.
 
 The files always have the same names, so these links always download the
 newest published release (use them on notizli.ch):
@@ -149,8 +171,6 @@ only while this repository is public.
 - **Windows signing.** Windows builds are unsigned (SmartScreen warns). Needs
   a code-signing certificate as a secret. (macOS releases are signed and
   notarized; CI test builds are ad-hoc.)
-- **Automatic updates.** `tauri-plugin-updater` from GitHub Releases, once
-  signing is set up (it needs its own update-signing key as a secret).
 - **macOS universal build** (Intel Macs): currently Apple Silicon only.
 - **Microphone clean-up.** No echo cancellation or noise suppression yet. The
   call's channel is the perfect echo reference for it later.

@@ -11,6 +11,7 @@ mod logfile;
 mod prompt;
 mod state;
 mod tray;
+mod updates;
 mod uploader;
 
 use tauri::{Emitter, Manager, RunEvent, WindowEvent};
@@ -26,8 +27,10 @@ fn main() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .manage(prompt::PromptState::default())
+        .manage(updates::Pending::default())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             logfile::init(&data_dir.join("logs"));
@@ -67,8 +70,13 @@ fn main() {
             uploader::spawn(app.handle().clone());
             detect::spawn(app.handle().clone());
             tray::create(app.handle())?;
+            let at_login = std::env::args().any(|a| a == "--hidden");
+            // Development builds never update themselves.
+            if !cfg!(debug_assertions) {
+                updates::spawn(app.handle().clone(), at_login);
+            }
             // Started at login: stay in the menu bar / notification area.
-            if std::env::args().any(|a| a == "--hidden") {
+            if at_login {
                 commands::set_dock(app.handle(), false);
             } else {
                 commands::focus(app.handle());
@@ -105,6 +113,7 @@ fn main() {
             commands::save_copy,
             commands::discard_unsent,
             commands::open_diagnostics,
+            commands::install_update,
             commands::set_ask_on_calls,
             commands::set_open_at_login,
             commands::prompt_view,

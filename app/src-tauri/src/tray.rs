@@ -3,15 +3,22 @@
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
+use std::sync::Mutex;
+
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
 use crate::commands;
 use crate::state::AppState;
+use crate::updates;
 
 const ID: &str = "main";
 
 pub struct Tray {
+    menu: Menu<Wry>,
     record: MenuItem<Wry>,
+    /// "Restart to update to …", in the menu only while an update is ready.
+    update: MenuItem<Wry>,
+    update_shown: Mutex<bool>,
 }
 
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
@@ -23,13 +30,19 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         "record" => toggle_recording(app),
         "open" => commands::focus(app),
         "quit" => quit_app(app),
+        "update" => {
+            if let Err(e) = updates::install(app) {
+                commands::notice(app, e);
+            }
+        }
         _ => {}
     });
     if let Some(icon) = app.default_window_icon() {
         tray = tray.icon(icon.clone());
     }
     tray.build(app)?;
-    app.manage(Tray { record });
+    let update = MenuItem::with_id(app, "update", "Restart to update", true, None::<&str>)?;
+    app.manage(Tray { menu, record, update, update_shown: Mutex::new(false) });
     Ok(())
 }
 
@@ -38,6 +51,17 @@ pub fn refresh(app: &AppHandle) {
     let recording = app.state::<AppState>().is_recording();
     if let Some(t) = app.try_state::<Tray>() {
         let _ = t.record.set_text(if recording { "Finish recording" } else { "Start recording" });
+        let ready = updates::ready(app).filter(|_| !recording);
+        if let Some(v) = &ready {
+            let _ = t.update.set_text(format!("Restart to update to {v}"));
+        }
+        let mut shown = t.update_shown.lock().unwrap();
+        if ready.is_some() != *shown {
+            let changed = if ready.is_some() { t.menu.insert(&t.update, 0) } else { t.menu.remove(&t.update) };
+            if changed.is_ok() {
+                *shown = ready.is_some();
+            }
+        }
     }
     if let Some(tray) = app.tray_by_id(ID) {
         let _ = tray.set_tooltip(Some(if recording { "Notizli — recording" } else { "Notizli" }));

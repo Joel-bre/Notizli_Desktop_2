@@ -59,7 +59,8 @@ jobs:
       - run: npm ci
         working-directory: app
       - name: Build the Windows installer
-        run: npx tauri build --bundles nsis
+        shell: bash
+        run: npx tauri build --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":false}}'
         working-directory: app
       - uses: actions/upload-artifact@v4
         with:
@@ -82,7 +83,7 @@ jobs:
       - run: npm ci
         working-directory: app
       - name: Build the macOS app (ad-hoc signed)
-        run: npx tauri build --bundles app,dmg
+        run: npx tauri build --bundles app,dmg --config '{"bundle":{"createUpdaterArtifacts":false}}'
         working-directory: app
       - name: Show what went into the app
         run: |

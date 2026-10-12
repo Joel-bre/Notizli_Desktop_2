@@ -101,6 +101,18 @@ next to the clock (Windows). Closing its window only hides it.
 Windows: `notizli-rec calls` (in the test tool's folder, from a command
 prompt) prints which call apps it sees using the microphone.
 
+## E. Automatic updates (once two versions are published)
+
+1. Install the published version from the download link.
+2. Publish the next version on GitHub (Releases → the draft → Publish).
+3. Quit Notizli and open it again (or wait up to 6 hours). Within a minute the
+   window says **"Notizli X is ready."** → click **Restart to update**.
+   Notizli restarts; the version at the bottom left is the new one.
+4. Mac: start a recording afterwards. macOS must **not** ask for the
+   microphone or system audio again.
+5. Start a recording while an update is ready: the line disappears and comes
+   back after finishing.
+
 ## If something goes wrong
 
 Click **Diagnostics** (bottom left, next to the version). It opens a folder

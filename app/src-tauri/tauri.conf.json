@@ -26,6 +26,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "publisher": "Notizli",
     "category": "Productivity",
@@ -41,6 +42,11 @@
     }
   },
   "plugins": {
+    "updater": {
+      "pubkey": "PUBLIC_KEY_PENDING",
+      "endpoints": ["https://github.com/Joel-bre/Notizli_Desktop_2/releases/latest/download/latest.json"],
+      "windows": { "installMode": "passive" }
+    },
     "deep-link": {
       "desktop": { "schemes": ["notizli-sh"] }
     }

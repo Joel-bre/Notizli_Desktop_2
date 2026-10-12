@@ -107,6 +107,8 @@ function refreshSoon() {
 function render() {
   if (!S) return;
   $("version").textContent = `Notizli ${S.version}`;
+  $("update-banner").hidden = !S.update_ready || !!S.recording;
+  $("update-text").textContent = S.update_ready ? `Notizli ${S.update_ready} is ready.` : "";
   renderUnsent();
 
   if (S.recording) {
@@ -572,6 +574,7 @@ $("error-back-btn").onclick = () => {
   mode = null;
   refresh();
 };
+$("update-btn").onclick = () => invoke("install_update").catch((e) => toast(errText(e)));
 $("diagnostics-btn").onclick = () => invoke("open_diagnostics").catch((e) => toast(errText(e)));
 $("ask-on-calls").onchange = () => invoke("set_ask_on_calls", { on: $("ask-on-calls").checked }).catch((e) => toast(errText(e)));
 $("open-at-login").onchange = () =>

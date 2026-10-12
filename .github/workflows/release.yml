@@ -3,7 +3,8 @@ name: Release (draft)
 # Run by hand (Actions → "Release (draft)" → Run workflow). Builds the Windows
 # installer and the macOS app for the version in Cargo.toml and attaches them
 # to a DRAFT GitHub release, which nobody sees until it is published by hand.
-# The app has no auto-update yet, so publishing never updates anyone.
+# Installed copies update themselves from the newest PUBLISHED release
+# (latest.json), so publishing a release updates everyone; drafts never do.
 # The Mac app and .dmg are signed with the Developer ID and notarized (secrets
 # listed in README → Releasing).
 #
@@ -28,10 +29,14 @@ jobs:
             bundles: nsis
             built: target/release/bundle/nsis/*.exe
             name: Notizli-Setup.exe
+            update: target/release/bundle/nsis/*.exe
+            update_name: Notizli-Setup.exe
           - os: macos-latest
-            bundles: dmg
+            bundles: app,dmg
             built: target/release/bundle/dmg/*.dmg
             name: Notizli.dmg
+            update: target/release/bundle/macos/Notizli.app.tar.gz
+            update_name: Notizli.app.tar.gz
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -53,7 +58,13 @@ jobs:
           APPLE_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_ID || '' }}
           APPLE_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_TEAM_ID || '' }}
+          # Signs the update files (see README → Automatic updates).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
+          for v in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
+            if [ -z "${!v}" ]; then echo "::error::GitHub secret $v is missing (README → Automatic updates)."; exit 1; fi
+          done
           args=(--bundles ${{ matrix.bundles }})
           if [ "$RUNNER_OS" = macOS ]; then
             for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
@@ -78,17 +89,24 @@ jobs:
           xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
           xcrun stapler staple "$dmg"
           spctl -a -vv -t open --context context:primary-signature "$dmg" || true
-      - name: Give the file its permanent name
+      - name: Give the files their permanent names
         shell: bash
         run: |
           mkdir -p out
           files=( ${{ matrix.built }} )
           test ${#files[@]} -eq 1
           cp "${files[0]}" "out/${{ matrix.name }}"
+          # The update file and its signature (the Windows update is the installer itself).
+          updates=( ${{ matrix.update }} )
+          test ${#updates[@]} -eq 1
+          test -f "${updates[0]}.sig"
+          if [ "${updates[0]}" != "${files[0]}" ]; then cp "${updates[0]}" "out/${{ matrix.update_name }}"; fi
+          cp "${updates[0]}.sig" "out/${{ matrix.update_name }}.sig"
+          ls -l out
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.os }}
-          path: out/${{ matrix.name }}
+          path: out/
 
   release:
     needs: build
@@ -99,11 +117,22 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Write latest.json (what installed copies read to find updates)
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          base="https://github.com/${{ github.repository }}/releases/download/v$version"
+          jq -n --arg v "$version" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg base "$base" \
+            --rawfile mac dist/Notizli.app.tar.gz.sig --rawfile win dist/Notizli-Setup.exe.sig \
+            '{version: $v, notes: "", pub_date: $date, platforms: {
+               "darwin-aarch64": {signature: ($mac | rtrimstr("\n")), url: ($base + "/Notizli.app.tar.gz")},
+               "windows-x86_64": {signature: ($win | rtrimstr("\n")), url: ($base + "/Notizli-Setup.exe")}}}' > dist/latest.json
+          cat dist/latest.json
       - name: Create the draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-          gh release create "v$version" dist/* --draft --target "$GITHUB_SHA" \
+          gh release create "v$version" dist/Notizli.dmg dist/Notizli-Setup.exe dist/Notizli.app.tar.gz dist/latest.json \
+            --draft --target "$GITHUB_SHA" \
             --title "Notizli $version" \
             --notes "Windows: run the .exe (click More info → Run anyway until the app is signed). Mac (Apple Silicon, macOS 14.4+): open the .dmg and drag Notizli to Applications."

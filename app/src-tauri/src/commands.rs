@@ -30,6 +30,8 @@ pub struct StateView {
     mic_device: Option<String>,
     ask_on_calls: bool,
     open_at_login: bool,
+    /// A downloaded update's version, ready to install.
+    update_ready: Option<String>,
     recording: Option<RecordingView>,
     unsent: Vec<UnsentView>,
     upload: Option<UploadView>,
@@ -105,6 +107,7 @@ pub fn get_state(app: AppHandle, state: State<'_, AppState>) -> StateView {
         mic_device: settings.mic_device.clone(),
         ask_on_calls: settings.ask_on_calls,
         open_at_login: settings.open_at_login.unwrap_or(false),
+        update_ready: crate::updates::ready(&app),
         recording,
         unsent: state
             .store
@@ -420,6 +423,14 @@ pub async fn quit_app(app: AppHandle) -> Res<()> {
     }
     app.exit(0);
     Ok(())
+}
+
+// ---- updates --------------------------------------------------------------------
+
+/// "Restart to update": installs and restarts (refused while recording).
+#[tauri::command]
+pub fn install_update(app: AppHandle) -> Res<()> {
+    crate::updates::install(&app)
 }
 
 // ---- settings -------------------------------------------------------------------
