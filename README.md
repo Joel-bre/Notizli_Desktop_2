@@ -37,7 +37,9 @@ To try it: [TESTING.md](TESTING.md).
   chosen from the active audio sessions on every output device (call apps such
   as Teams/Zoom/Webex first, then browsers, then anything else, else the default
   speaker). It is re-checked every second and switched once chosen twice in a
-  row. Per-app capture (process loopback) is not used: on the affected laptop it
+  row. During a call (a call app or browser holding a microphone), only that
+  app's sound counts: other apps' notification sounds on another speaker never
+  move the capture. Per-app capture (process loopback) is not used: on the affected laptop it
   returned only digital silence, for every app.
 - **macOS 14.4+.** Microphone: a Core Audio IOProc on the chosen or default
   input. The call: a private Core Audio process tap on everything the Mac plays
