@@ -40,7 +40,7 @@ column with numbers around -20 to -50 while the other side talked
 ## B. Windows: the app
 
 1. Download **notizli-windows-installer-…**, unzip, run
-   `Notizli_0.1.0_x64-setup.exe` (again **More info → Run anyway**).
+   `Notizli_<version>_x64-setup.exe` (again **More info → Run anyway**).
 2. The app opens on "Connect this app to your account". Click
    **Pair with my account**: notizli.ch/pair opens in the browser. Click
    **Pair this device** there; the browser asks to open Notizli → allow.
