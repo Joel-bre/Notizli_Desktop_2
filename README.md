@@ -127,6 +127,12 @@ variables → Actions); the release fails clearly if one is missing:
 | `APPLE_PASSWORD` | An app-specific password of that account, for notarization |
 | `APPLE_TEAM_ID` | The 10-character Team ID |
 
+The certificate in use expires on **1 Feb 2027**. Apps signed before then keep
+working; for releases after that, create a new "Developer ID Application"
+certificate (developer.apple.com → Certificates) and replace
+`APPLE_CERTIFICATE` and `APPLE_CERTIFICATE_PASSWORD`. Same Team ID, so users'
+permissions are kept.
+
 CI test builds stay ad-hoc signed (fast, no Apple round trip).
 
 The files always have the same names, so these links always download the
