@@ -113,6 +113,22 @@ Bump `version` in `Cargo.toml`, push, then run **Actions → Release (draft)**.
 It builds the Windows installer and the macOS .dmg and attaches them to a
 *draft* release; publish it by hand on GitHub when ready.
 
+The Mac app is signed with Joel's Developer ID and notarized by Apple (app
+and .dmg), so it opens without warnings and keeps its permissions across
+updates. That needs these repository secrets (Settings → Secrets and
+variables → Actions); the release fails clearly if one is missing:
+
+| Secret | What |
+|---|---|
+| `APPLE_CERTIFICATE` | The "Developer ID Application" certificate with its private key, exported as .p12, base64 |
+| `APPLE_CERTIFICATE_PASSWORD` | The .p12's password |
+| `APPLE_SIGNING_IDENTITY` | `Developer ID Application: Joel Breguet (TEAMID)` |
+| `APPLE_ID` | The Apple account (joel.devapps@gmail.com) |
+| `APPLE_PASSWORD` | An app-specific password of that account, for notarization |
+| `APPLE_TEAM_ID` | The 10-character Team ID |
+
+CI test builds stay ad-hoc signed (fast, no Apple round trip).
+
 The files always have the same names, so these links always download the
 newest published release (use them on notizli.ch):
 
@@ -124,10 +140,9 @@ only while this repository is public.
 
 ## Not done yet
 
-- **Signing.** Windows builds are unsigned (SmartScreen warns). macOS builds are
-  ad-hoc signed (Gatekeeper asks once, and Keychain may ask after each new
-  build). Needs an Apple Developer ID (+ notarization) and ideally a Windows
-  code-signing certificate, as secrets in this repository.
+- **Windows signing.** Windows builds are unsigned (SmartScreen warns). Needs
+  a code-signing certificate as a secret. (macOS releases are signed and
+  notarized; CI test builds are ad-hoc.)
 - **Automatic updates.** `tauri-plugin-updater` from GitHub Releases, once
   signing is set up (it needs its own update-signing key as a secret).
 - **macOS universal build** (Intel Macs): currently Apple Silicon only.

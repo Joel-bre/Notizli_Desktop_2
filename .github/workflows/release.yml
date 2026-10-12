@@ -4,6 +4,8 @@ name: Release (draft)
 # installer and the macOS app for the version in Cargo.toml and attaches them
 # to a DRAFT GitHub release, which nobody sees until it is published by hand.
 # The app has no auto-update yet, so publishing never updates anyone.
+# The Mac app and .dmg are signed with the Developer ID and notarized (secrets
+# listed in README → Releasing).
 #
 # The files always have the same names (Notizli-Setup.exe, Notizli.dmg), so
 # these links always give the newest published release:
@@ -39,8 +41,41 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm ci
         working-directory: app
-      - run: npx tauri build --bundles ${{ matrix.bundles }}
+      - name: Build (macOS signed with the Developer ID and notarized)
         working-directory: app
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ matrix.os == 'macos-latest' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ matrix.os == 'macos-latest' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_TEAM_ID || '' }}
+        run: |
+          args=(--bundles ${{ matrix.bundles }})
+          if [ "$RUNNER_OS" = macOS ]; then
+            for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+              if [ -z "${!v}" ]; then echo "::error::GitHub secret $v is missing (README → Releasing)."; exit 1; fi
+            done
+            # The config's "-" (ad-hoc, for test builds) gives way to the Developer ID.
+            args+=(--config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"$APPLE_SIGNING_IDENTITY\"}}}")
+          fi
+          npx tauri build "${args[@]}"
+      - name: Notarize the disk image too, and check what Gatekeeper will say
+        if: runner.os == 'macOS'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          app=target/release/bundle/macos/Notizli.app
+          dmg=$(ls target/release/bundle/dmg/*.dmg)
+          codesign -dv "$app" 2>&1 | grep -E "Authority|TeamIdentifier|flags"
+          xcrun stapler validate "$app"
+          spctl -a -vv "$app"
+          xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple "$dmg"
+          spctl -a -vv -t open --context context:primary-signature "$dmg" || true
       - name: Give the file its permanent name
         shell: bash
         run: |
@@ -69,4 +104,4 @@ jobs:
           version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           gh release create "v$version" dist/* --draft --target "$GITHUB_SHA" \
             --title "Notizli $version" \
-            --notes "Windows: run the .exe (click More info → Run anyway until the app is signed). Mac (Apple Silicon, macOS 14.4+): open the .dmg and drag Notizli to Applications; the first time, System Settings → Privacy & Security → Open Anyway."
+            --notes "Windows: run the .exe (click More info → Run anyway until the app is signed). Mac (Apple Silicon, macOS 14.4+): open the .dmg and drag Notizli to Applications."
