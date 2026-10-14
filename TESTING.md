@@ -129,3 +129,19 @@ Send those files to Claude.
 The health report (`*.health.json`) says, every 10 seconds, how loud each side
 was and what was being recorded. It contains no audio and no words. If a
 recording sounds wrong, send it to Claude.
+
+---
+
+## Calendar (0.3.0)
+
+Needs a calendar connected on notizli.ch (Settings → Calendar) and a meeting
+with someone else invited, with a Teams/Zoom/Meet link.
+
+1. Join the meeting's call within 10 minutes of its start. The box says
+   "<meeting> · <time> · Teams" and "You're in a call (Teams). Record it?".
+2. Record, talk for a minute, finish. On notizli.ch the meeting page says
+   "From your calendar: <meeting>", and the minutes use the invitees' names.
+3. Two meetings back to back (the first still running when the second
+   starts): join the second. The box names the second one.
+4. Start a recording from the window during a meeting and click
+   "Not this meeting". On notizli.ch the recording is not linked.
