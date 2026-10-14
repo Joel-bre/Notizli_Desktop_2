@@ -498,10 +498,14 @@ pub fn prompt_view(app: AppHandle) -> Option<prompt::View> {
 #[tauri::command]
 pub async fn prompt_record(app: AppHandle) -> Res<()> {
     let user = app.state::<AppState>().watcher.lock().unwrap().answered();
+    let meeting = match prompt::current(&app) {
+        Some(prompt::View::Ask { meeting, .. }) => meeting,
+        _ => None,
+    };
     prompt::hide(&app);
     let name = user.map(|u| u.app).unwrap_or_else(|| "Call".into());
     log::info!("record ({name})");
-    match start_recording(app.clone(), Some(call_title(&name)), None).await {
+    match start_recording(app.clone(), Some(call_title(&name)), meeting).await {
         Ok(_) => {
             reveal(&app);
             Ok(())

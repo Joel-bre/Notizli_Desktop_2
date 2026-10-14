@@ -11,7 +11,7 @@ function render(v) {
   if (!v) return;
   if (v.mode === "ask") {
     $("title").textContent = v.title;
-    $("question").textContent = "Record it?";
+    $("question").textContent = v.question;
     $("yes").textContent = "Record";
     $("no").textContent = "Not now";
     $("yes").onclick = () => invoke("prompt_record");

@@ -1,4 +1,5 @@
-//! The small "Record this call?" box at the top right of the screen. It never
+//! The small "Record it?" box at the top right of the screen, naming the
+//! calendar meeting when notizli.ch knows it. It never
 //! takes the keyboard from the call and is hidden from screen sharing where
 //! the system allows it.
 
@@ -8,6 +9,8 @@ use notizli_engine::{AppKind, MicUser};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
+use crate::calendar;
+
 const LABEL: &str = "prompt";
 const WIDTH: f64 = 360.0;
 const HEIGHT: f64 = 132.0;
@@ -16,7 +19,13 @@ const MARGIN: f64 = 16.0;
 #[derive(Clone, Serialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum View {
-    Ask { title: String },
+    Ask {
+        title: String,
+        question: String,
+        /// The calendar meeting the box names; Record records for it.
+        #[serde(skip)]
+        meeting: Option<String>,
+    },
     Countdown { seconds: u64 },
 }
 
@@ -29,7 +38,17 @@ pub fn ask(app: &AppHandle, user: &MicUser) {
         AppKind::Call => format!("You're in a call ({}).", user.app),
         AppKind::Browser => format!("Your browser ({}) is using the microphone.", user.app),
     };
-    show(app, View::Ask { title });
+    show(app, View::Ask { title: title.clone(), question: "Record it?".into(), meeting: None });
+    // Name the meeting once notizli.ch answers, if this box is still up.
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let Some(up) = calendar::upcoming(&app, calendar::FRESH).await else { return };
+        let Some(m) = up.now_meeting() else { return };
+        let still_asking = matches!(current(&app), Some(View::Ask { meeting: None, title: t, .. }) if t == title);
+        if still_asking {
+            show(&app, View::Ask { title: calendar::line(m), question: format!("{title} Record it?"), meeting: Some(m.id.clone()) });
+        }
+    });
 }
 
 pub fn countdown(app: &AppHandle, seconds: u64) {
