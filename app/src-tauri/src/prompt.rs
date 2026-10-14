@@ -41,14 +41,24 @@ pub fn ask(app: &AppHandle, user: &MicUser) {
     show(app, View::Ask { title: title.clone(), question: "Record it?".into(), meeting: None });
     // Name the meeting once notizli.ch answers, if this box is still up.
     let app = app.clone();
+    let user = user.clone();
     tauri::async_runtime::spawn(async move {
         let Some(up) = calendar::upcoming(&app, calendar::FRESH).await else { return };
         let Some(m) = up.now_meeting() else { return };
         let still_asking = matches!(current(&app), Some(View::Ask { meeting: None, title: t, .. }) if t == title);
         if still_asking {
-            show(&app, View::Ask { title: calendar::line(m), question: format!("{title} Record it?"), meeting: Some(m.id.clone()) });
+            show(&app, View::Ask { title: calendar::line(m), question: named_question(&user), meeting: Some(m.id.clone()) });
         }
     });
+}
+
+/// The line under a named meeting: short enough that "Record it?" stays
+/// visible in the box (about 45 characters fit).
+fn named_question(user: &MicUser) -> String {
+    match user.kind {
+        AppKind::Call => format!("In a call ({}). Record it?", user.app),
+        AppKind::Browser => format!("{} is using the mic. Record it?", user.app),
+    }
 }
 
 pub fn countdown(app: &AppHandle, seconds: u64) {
@@ -104,4 +114,23 @@ fn place(w: &WebviewWindow) {
     let x = area.position.x as f64 + area.size.width as f64 - (WIDTH + MARGIN) * scale;
     let y = area.position.y as f64 + MARGIN * scale;
     let _ = w.set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn user(app: &str, kind: AppKind) -> MicUser {
+        MicUser { app: app.into(), kind }
+    }
+
+    #[test]
+    fn the_question_under_a_named_meeting_fits_on_one_line() {
+        assert_eq!(named_question(&user("Zoom", AppKind::Call)), "In a call (Zoom). Record it?");
+        assert_eq!(named_question(&user("Google Chrome", AppKind::Browser)), "Google Chrome is using the mic. Record it?");
+        // About 45 characters fit in the box at 14 px; the question must survive.
+        for u in [user("Microsoft Teams", AppKind::Call), user("Microsoft Edge", AppKind::Browser)] {
+            assert!(named_question(&u).chars().count() <= 45, "{}", named_question(&u));
+        }
+    }
 }

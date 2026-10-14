@@ -432,7 +432,6 @@ pub async fn discard_recording(app: AppHandle) -> Res<()> {
     Ok(())
 }
 
-/// Quit, saving a recording in progress first (it uploads on next start).
 /// "Not this meeting" while recording: upload with calendar_event_id=none.
 #[tauri::command]
 pub fn not_this_meeting(app: AppHandle, state: State<'_, AppState>) {
@@ -444,6 +443,7 @@ pub fn not_this_meeting(app: AppHandle, state: State<'_, AppState>) {
     changed(&app);
 }
 
+/// Quit, saving a recording in progress first (it uploads on next start).
 #[tauri::command]
 pub async fn quit_app(app: AppHandle) -> Res<()> {
     if app.state::<AppState>().is_recording() {

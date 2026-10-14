@@ -145,3 +145,30 @@ with someone else invited, with a Teams/Zoom/Meet link.
    starts): join the second. The box names the second one.
 4. Start a recording from the window during a meeting and click
    "Not this meeting". On notizli.ch the recording is not linked.
+
+### Calendar, debug build (developer checks, not run before 0.3.0)
+
+Nobody has watched these screens yet: when Claude built 0.3.0, the installed
+Notizli was running (same identifier, data folder and keychain token) and a
+recording would have needed a microphone permission prompt. Quit the
+installed Notizli first. Write `/tmp/upcoming.json`, with `start` a few
+minutes before now (UTC) and `end` 30 minutes after:
+
+```json
+{ "available": true, "connected": true, "providers": [], "now": "g:demo",
+  "meetings": [{ "id": "g:demo", "provider": "google", "title": "Weekly sync",
+                 "start": "2026-10-14T12:00:00Z", "end": "2026-10-14T12:30:00Z", "joinType": "teams" }] }
+```
+
+Then `cd app && NOTIZLI_FAKE_CALL=120 NOTIZLI_FAKE_UPCOMING=/tmp/upcoming.json npx tauri dev`:
+
+1. After ~10 s the box says "You're in a call (Zoom)." and almost at once
+   changes to "Weekly sync · HH:MM · Teams" / "In a call (Zoom). Record it?".
+2. Record → the window shows "For: Weekly sync · HH:MM · Teams — Not this meeting".
+   While it records, `unsent/<id>.json` holds `calendar_ref` and `calendar_line`.
+3. Not this meeting → "Not linked to a calendar meeting." Discard.
+4. `"now": null` → the box keeps "You're in a call (Zoom)." / "Record it?" and
+   the recording shows no meeting line.
+5. A 60-character title → the box shows one line ending in "…"; the buttons
+   stay visible.
+6. `notizli.log` never contains "Weekly sync".
