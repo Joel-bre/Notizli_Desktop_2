@@ -65,7 +65,12 @@ async fn upload_one(app: &AppHandle, token: &str, id: String) -> bool {
     };
 
     let upload_url = state.settings.lock().unwrap().upload_url.clone();
-    let fields = UploadMeta { title: meta.title.clone(), started_at: meta.started_at.clone(), channel_layout: meta.channel_layout.clone() };
+    let fields = UploadMeta {
+        title: meta.title.clone(),
+        started_at: meta.started_at.clone(),
+        channel_layout: meta.channel_layout.clone(),
+        calendar_event_id: meta.calendar_ref.clone(),
+    };
     let result = state.api.upload(upload_url.as_deref(), token, &path, &meta.mime, &fields, state.upload.sent.clone()).await;
     ticker.abort();
     *state.upload.current.lock().unwrap() = None;
