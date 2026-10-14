@@ -1,4 +1,4 @@
-//! The Notizli server API: pairing and upload (contract fixed by the server).
+//! The Notizli server API: pairing, upload and upcoming meetings (contract fixed by the server).
 
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -8,6 +8,8 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio_util::io::ReaderStream;
+
+use crate::calendar::Upcoming;
 
 /// Base URL of the Notizli server; override at build time with
 /// `NOTIZLI_BASE_URL=https://staging.example cargo build`.
@@ -184,6 +186,28 @@ impl Api {
         })
     }
 
+    /// The user's meetings in progress or within 3 hours: titles and times
+    /// only. Any failure, including a server that predates the route, is an
+    /// error the caller treats as "no calendar".
+    pub async fn upcoming_meetings(&self, device_token: &str) -> Result<Upcoming, ApiError> {
+        let resp = self
+            .http
+            .get(format!("{}/api/public/recorder/upcoming-meetings", self.base))
+            .bearer_auth(device_token)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+            .map_err(network)?;
+        if resp.status().is_success() {
+            return resp.json::<Upcoming>().await.map_err(|e| ApiError::Server(format!("unexpected answer: {e}")));
+        }
+        let (status, msg) = read_error(resp).await;
+        Err(match status {
+            401 => ApiError::Unauthorized,
+            _ => ApiError::Server(server_detail(status, &msg)),
+        })
+    }
+
     /// Upload a recording from disk, streaming it (never all in memory).
     /// `sent` is updated with the bytes sent so far.
     pub async fn upload(
@@ -306,5 +330,21 @@ mod tests {
         let e = api.pair_preview("ccp_pair_x").await.unwrap_err();
         assert!(matches!(e, ApiError::Network(_)));
         assert!(e.retryable());
+    }
+
+    #[tokio::test]
+    async fn upcoming_meetings_with_the_device_token() {
+        let srv = TestServer::start(vec![
+            Reply::json(200, r#"{"available":true,"connected":false,"providers":[],"now":null,"meetings":[]}"#),
+            Reply::text(404, "Not found"),
+        ])
+        .await;
+        let api = Api::new(&srv.url());
+        let u = api.upcoming_meetings("tok").await.unwrap();
+        assert!(u.available && !u.connected && u.meetings.is_empty());
+        assert!(api.upcoming_meetings("tok").await.is_err());
+        let r = &srv.requests()[0];
+        assert_eq!(r.path, "/api/public/recorder/upcoming-meetings");
+        assert_eq!(r.header("authorization").as_deref(), Some("Bearer tok"));
     }
 }
