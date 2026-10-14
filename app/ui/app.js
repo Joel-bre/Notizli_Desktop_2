@@ -245,6 +245,9 @@ function renderRecording() {
   $("mic-name").textContent = r.labels.microphone || "";
   $("other-name").textContent = r.layout === "mic_remote" ? (r.labels.hearing ? `Hearing: ${r.labels.hearing}` : "") : "Not recorded";
   $("silent-warning").hidden = !r.labels.warning;
+  $("rec-meeting").hidden = !r.meeting && !r.not_linked;
+  $("rec-meeting-text").textContent = r.meeting ? `For: ${r.meeting} —` : "Not linked to a calendar meeting.";
+  $("not-meeting-btn").hidden = !r.meeting;
 }
 
 function showCheck(el, id) {
@@ -566,6 +569,7 @@ $("record-unpaired-btn").onclick = () => {
 $("record-btn").onclick = startRecording;
 $("stop-btn").onclick = finishRecording;
 $("discard-btn").onclick = discardRecording;
+$("not-meeting-btn").onclick = () => invoke("not_this_meeting").catch((e) => toast(errText(e)));
 $("record-another-btn").onclick = () => {
   mode = null;
   refresh();

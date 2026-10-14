@@ -76,7 +76,7 @@ fn toggle_recording(app: &AppHandle) {
     commands::focus(app);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = commands::start_recording(app.clone(), None).await {
+        if let Err(e) = commands::start_recording(app.clone(), None, None).await {
             commands::notice(&app, e);
         }
     });

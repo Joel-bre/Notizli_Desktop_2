@@ -26,6 +26,8 @@ pub struct AppState {
     pub upload: UploadState,
     /// Call detection: when to ask "Record this call?" (see detect.rs).
     pub watcher: Mutex<CallWatcher>,
+    /// The user's upcoming meetings, in memory only (see calendar.rs).
+    pub calendar: crate::calendar::CalendarState,
 }
 
 pub struct Active {
@@ -82,6 +84,7 @@ impl AppState {
             pair: Mutex::new(None),
             upload: UploadState::default(),
             watcher: Mutex::new(CallWatcher::default()),
+            calendar: Default::default(),
         })
     }
 

@@ -227,3 +227,4 @@ button.link:hover { background: none; color: var(--ink); }
 
 label.check-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; cursor: pointer; }
 label.check-row input { accent-color: var(--signal); }
+.rec-meeting { color: var(--ink-muted); font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
