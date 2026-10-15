@@ -48,12 +48,16 @@
       channels of one file, and saves it on this computer before uploading.
     </p>
 
+    <label class="check-row" id="meeting-choice" hidden><input type="checkbox" id="meeting-tick" checked /> <span>This recording is for: <strong id="meeting-line"></strong></span></label>
+    <p class="muted" id="next-meeting" hidden></p>
+    <p class="muted" id="connect-calendar" hidden>Connect your calendar so recordings are linked to their meeting. <button class="link" id="connect-calendar-btn">Connect…</button></p>
+
     <label class="field" for="meeting-name">Meeting title — optional</label>
     <input type="text" id="meeting-name" maxlength="200" placeholder="Acme — pricing call" spellcheck="false" />
 
     <label class="field" for="device">Microphone</label>
     <select id="device"><option value="">Default microphone</option></select>
-    <label class="check-row"><input type="checkbox" id="ask-on-calls" /> Ask me to record when a call starts</label>
+    <label class="check-row"><input type="checkbox" id="ask-on-calls" /> Ask me to record when a call or meeting starts</label>
     <label class="check-row"><input type="checkbox" id="open-at-login" /> Open Notizli when I log in</label>
 
     <button class="primary block" id="record-btn">

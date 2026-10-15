@@ -38,6 +38,8 @@ pub struct StateView {
     pair_request: Option<PairRequestView>,
     last_done: Option<DoneView>,
     folder: String,
+    /// The calendar lines for the idle window; None: nothing to show.
+    calendar: Option<crate::calendar::CalendarView>,
 }
 
 #[derive(Serialize, Clone)]
@@ -147,6 +149,7 @@ pub fn get_state(app: AppHandle, state: State<'_, AppState>) -> StateView {
             title: title.clone(),
         }),
         folder: state.store.folder().display().to_string(),
+        calendar: crate::calendar::view(&app),
     }
 }
 
@@ -211,6 +214,21 @@ pub fn open_meeting(app: AppHandle, meeting_id: String) -> Res<()> {
         return Err("invalid meeting".into());
     }
     app.opener().open_url(api::meeting_url(&meeting_id), None::<&str>).map_err(|e| e.to_string())
+}
+
+/// The window got focus: a list older than 2 minutes is fetched again.
+#[tauri::command]
+pub async fn calendar_refresh(app: AppHandle) {
+    let before = crate::calendar::view(&app);
+    crate::calendar::upcoming(&app, crate::calendar::FRESH).await;
+    if crate::calendar::view(&app) != before {
+        changed(&app);
+    }
+}
+
+#[tauri::command]
+pub fn open_calendar_settings(app: AppHandle) -> Res<()> {
+    app.opener().open_url(api::settings_url(), None::<&str>).map_err(|e| e.to_string())
 }
 
 // ---- pairing ------------------------------------------------------------------
@@ -281,7 +299,6 @@ pub async fn confirm_pair(app: AppHandle) -> Res<String> {
 #[tauri::command]
 pub fn unpair(app: AppHandle, state: State<'_, AppState>) -> Res<()> {
     state.set_token(None)?;
-    state.calendar.forget();
     state.update_settings(|s| {
         s.paired_email = None;
         s.device_label = None;
@@ -307,8 +324,30 @@ fn call_title(app: &str) -> String {
     format!("{app} call — {}", now_text())
 }
 
+/// The title a recording from the box gets: the in-person box keeps the
+/// desktop default, which the server replaces with "Customer — Project — …".
+fn record_title(from_calendar: bool, app: Option<String>) -> String {
+    if from_calendar {
+        default_title()
+    } else {
+        call_title(&app.unwrap_or_else(|| "Call".into()))
+    }
+}
+
+/// The window or the menu bar: `calendar` is the meeting the user picked
+/// ("g:…"/"m:…", or "none"); its line comes from the list the window showed.
 #[tauri::command]
 pub async fn start_recording(app: AppHandle, title: Option<String>, calendar: Option<String>) -> Res<RecordingView> {
+    let pick = calendar.map(|id| {
+        let line = app.state::<AppState>().calendar.cached().and_then(|u| u.meeting(&id).map(crate::calendar::line));
+        (id, line)
+    });
+    start(app, title, pick).await
+}
+
+/// `pick`: the meeting the recording is for and its line, or None to ask
+/// notizli.ch once the recording runs.
+async fn start(app: AppHandle, title: Option<String>, pick: Option<(String, Option<String>)>) -> Res<RecordingView> {
     let state = app.state::<AppState>();
     if state.is_recording() {
         return Err("Already recording.".into());
@@ -355,16 +394,18 @@ pub async fn start_recording(app: AppHandle, title: Option<String>, calendar: Op
     meta.channel_layout = recorder.layout().as_str().to_string();
     // The meeting the user picked ("g:…"/"m:…", or "none"); without a pick,
     // attach_now below asks notizli.ch once the recording runs.
-    if let Some(c) = &calendar {
-        meta.calendar_ref = Some(c.clone());
-        meta.calendar_line = state.calendar.cached().and_then(|u| u.meeting(c).map(crate::calendar::line));
+    let picked = pick.is_some();
+    if let Some((id, line)) = pick {
+        meta.calendar_ref = Some(id);
+        meta.calendar_line = line;
     }
     let _ = state.store.save(&meta);
     let active = Active { recorder, meta, started: Instant::now(), labels, _awake: Awake::start() };
     let view = recording_view(&active);
     *state.recording.lock().unwrap() = Some(active);
+    prompt::hide_in_person(&app);
     changed(&app);
-    if calendar.is_none() {
+    if !picked {
         crate::calendar::attach_now(&app, view.id.clone());
     }
     Ok(view)
@@ -466,7 +507,7 @@ pub fn install_update(app: AppHandle) -> Res<()> {
 #[tauri::command]
 pub fn set_ask_on_calls(app: AppHandle, state: State<'_, AppState>, on: bool) {
     state.update_settings(|s| s.ask_on_calls = on);
-    log::info!("ask to record when a call starts: {on}");
+    log::info!("ask to record when a call or meeting starts: {on}");
     changed(&app);
 }
 
@@ -498,14 +539,19 @@ pub fn prompt_view(app: AppHandle) -> Option<prompt::View> {
 #[tauri::command]
 pub async fn prompt_record(app: AppHandle) -> Res<()> {
     let user = app.state::<AppState>().watcher.lock().unwrap().answered();
-    let meeting = match prompt::current(&app) {
-        Some(prompt::View::Ask { meeting, .. }) => meeting,
-        _ => None,
-    };
+    let view = prompt::current(&app);
+    let from_calendar = view.as_ref().is_some_and(|v| v.asks_about_meeting());
+    // The meeting and its line as the box showed them: the list may have
+    // been refreshed (or failed) since.
+    let meeting = view.and_then(|v| v.meeting()).map(|(id, line)| (id, Some(line)));
     prompt::hide(&app);
-    let name = user.map(|u| u.app).unwrap_or_else(|| "Call".into());
-    log::info!("record ({name})");
-    match start_recording(app.clone(), Some(call_title(&name)), meeting).await {
+    let app_name = user.map(|u| u.app);
+    if from_calendar {
+        log::info!("record (calendar meeting)");
+    } else {
+        log::info!("record ({})", app_name.as_deref().unwrap_or("Call"));
+    }
+    match start(app.clone(), Some(record_title(from_calendar, app_name)), meeting).await {
         Ok(_) => {
             reveal(&app);
             Ok(())
@@ -634,4 +680,16 @@ pub fn retry_later(meta: &mut Meta, error: &str) {
     meta.attempts += 1;
     meta.last_error = Some(error.to_string());
     meta.retry_after = now_unix() + notizli_core::store::backoff_secs(meta.attempts);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_recording_from_the_in_person_box_keeps_the_desktop_default_title() {
+        assert!(record_title(true, None).starts_with("Desktop recording — "));
+        assert!(record_title(true, Some("Zoom".into())).starts_with("Desktop recording — "));
+        assert!(record_title(false, Some("Zoom".into())).starts_with("Zoom call — "));
+    }
 }

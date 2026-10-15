@@ -107,6 +107,8 @@ impl AppState {
         }
         *self.token.lock().unwrap() = token;
         *self.token_error.lock().unwrap() = None;
+        // Another account (or none): its meetings aren't this one's.
+        self.calendar.forget();
         Ok(())
     }
 

@@ -15,6 +15,7 @@ let S = null; // last state from Rust
 let mode = null;
 let timerBase = { ms: 0, at: 0 };
 let micsLoaded = false;
+let shownMeetingId = null; // the meeting the tick-box offers
 // What the engine said about the last recording: {id, ok, text}.
 let lastCheck = null;
 
@@ -211,6 +212,18 @@ function renderIdle() {
   $("ask-on-calls").checked = S.ask_on_calls;
   $("open-at-login").checked = S.open_at_login;
   if (!micsLoaded) loadMics();
+  const cal = S.calendar;
+  const nowId = cal && cal.now ? cal.now.id : null;
+  if (nowId !== shownMeetingId) {
+    // A different meeting is on: offer it ticked again.
+    shownMeetingId = nowId;
+    $("meeting-tick").checked = true;
+  }
+  $("meeting-choice").hidden = !nowId;
+  $("meeting-line").textContent = nowId ? cal.now.line : "";
+  $("next-meeting").hidden = !(cal && cal.next);
+  $("next-meeting").textContent = cal && cal.next ? `Next meeting: ${cal.next}` : "";
+  $("connect-calendar").hidden = !(cal && cal.connect);
 }
 
 async function loadMics() {
@@ -381,7 +394,10 @@ async function startRecording() {
       : "Opening the microphone and the speaker your call plays on…";
   render();
   try {
-    await invoke("start_recording", { title: $("meeting-name").value || null });
+    // The meeting the tick-box offered: ticked → that one, unticked → none;
+    // no offer → the app asks notizli.ch once the recording runs.
+    const calendar = shownMeetingId ? ($("meeting-tick").checked ? shownMeetingId : "none") : null;
+    await invoke("start_recording", { title: $("meeting-name").value || null, calendar });
     mode = null;
     $("rec-status").textContent = "Saved as you go. Uploads when you finish.";
   } catch (e) {
@@ -595,9 +611,11 @@ $("unpair-btn").onclick = async () => {
   });
   if (ok) invoke("unpair").then(refresh).catch((e) => toast(errText(e)));
 };
+$("connect-calendar-btn").onclick = () => invoke("open_calendar_settings").catch((e) => toast(errText(e)));
 window.addEventListener("focus", () => {
   micsLoaded = false;
   refreshSoon();
+  invoke("calendar_refresh").catch(() => {});
 });
 
 // Start: show state, and a pairing request that arrived before the window loaded.
