@@ -50,8 +50,16 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Keep the menu in step with the recording.
+/// Keep the menu in step with the recording. Menu changes wait for the main
+/// thread, so they all happen there: a background thread holding a lock
+/// below while waiting for it would hang a command running there that wants
+/// the same lock. On the main thread this runs at once.
 pub fn refresh(app: &AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || apply(&handle));
+}
+
+fn apply(app: &AppHandle) {
     let recording = app.state::<AppState>().is_recording();
     if let Some(t) = app.try_state::<Tray>() {
         let _ = t.record.set_text(if recording { "Finish recording" } else { "Start recording" });

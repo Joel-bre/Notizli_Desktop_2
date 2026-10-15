@@ -403,6 +403,7 @@ async fn start(app: AppHandle, title: Option<String>, pick: Option<(String, Opti
     let active = Active { recorder, meta, started: Instant::now(), labels, _awake: Awake::start() };
     let view = recording_view(&active);
     *state.recording.lock().unwrap() = Some(active);
+    prompt::hide_in_person(&app);
     changed(&app);
     if !picked {
         crate::calendar::attach_now(&app, view.id.clone());
@@ -539,7 +540,7 @@ pub fn prompt_view(app: AppHandle) -> Option<prompt::View> {
 pub async fn prompt_record(app: AppHandle) -> Res<()> {
     let user = app.state::<AppState>().watcher.lock().unwrap().answered();
     let view = prompt::current(&app);
-    let from_calendar = matches!(view, Some(prompt::View::Ask { from_calendar: true, .. }));
+    let from_calendar = view.as_ref().is_some_and(|v| v.asks_about_meeting());
     // The meeting and its line as the box showed them: the list may have
     // been refreshed (or failed) since.
     let meeting = view.and_then(|v| v.meeting()).map(|(id, line)| (id, Some(line)));

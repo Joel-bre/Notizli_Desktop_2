@@ -45,6 +45,11 @@ impl View {
         }
     }
 
+    /// The box asks about a meeting with no video link (not about a call).
+    pub fn asks_about_meeting(&self) -> bool {
+        matches!(self, View::Ask { from_calendar: true, .. })
+    }
+
     /// The in-person box for this meeting.
     fn is_in_person(&self, id: &str) -> bool {
         matches!(self, View::Ask { meeting: Some(m), from_calendar: true, .. } if m == id)
@@ -66,7 +71,7 @@ pub fn ask(app: &AppHandle, user: &MicUser) {
     let user = user.clone();
     tauri::async_runtime::spawn(async move {
         let Some(up) = calendar::upcoming(&app, calendar::FRESH).await else { return };
-        let Some(m) = up.now_meeting() else { return };
+        let Some(m) = up.now_meeting_at(time::OffsetDateTime::now_utc()) else { return };
         let still_asking = matches!(current(&app), Some(View::Ask { meeting: None, from_calendar: false, title: t, .. }) if t == title);
         if still_asking {
             show(&app, View::Ask { title: calendar::line(m), question: named_question(&user), meeting: Some(m.id.clone()), from_calendar: false });
@@ -109,6 +114,13 @@ fn named_question(user: &MicUser) -> String {
     match user.kind {
         AppKind::Call => format!("In a call ({}). Record it?", user.app),
         AppKind::Browser => format!("{} is using the mic. Record it?", user.app),
+    }
+}
+
+/// A recording started some other way: the in-person box has no more question.
+pub fn hide_in_person(app: &AppHandle) {
+    if current(app).is_some_and(|v| v.asks_about_meeting()) {
+        hide(app);
     }
 }
 
@@ -190,6 +202,8 @@ mod tests {
         assert!(matches!(&v, View::Ask { question, from_calendar: true, .. } if question == "Starting now. Record it?"));
         assert_eq!(v.meeting(), Some(("g:V".to_string(), "Visit · 12:00 · In person or by phone".to_string())));
         assert!(v.is_in_person("g:V"));
+        assert!(v.asks_about_meeting());
+        assert!(!View::Countdown { seconds: 60 }.asks_about_meeting());
         assert!(!v.is_in_person("g:other"));
         let call = View::Ask { title: "t".into(), question: "q".into(), meeting: Some("g:V".into()), from_calendar: false };
         assert!(!call.is_in_person("g:V"), "a call box that names the meeting isn't the in-person box");

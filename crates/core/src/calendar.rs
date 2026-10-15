@@ -54,6 +54,10 @@ impl Meeting {
         parse(&self.start)
     }
 
+    pub fn end_at(&self) -> Option<OffsetDateTime> {
+        parse(&self.end)
+    }
+
     /// No video link: in person or by phone, so call detection can't notice it.
     pub fn in_person(&self) -> bool {
         self.join_type.is_none()
@@ -95,6 +99,12 @@ impl Upcoming {
     /// The meeting a recording started now belongs to, when the server is sure.
     pub fn now_meeting(&self) -> Option<&Meeting> {
         self.now.as_deref().and_then(|id| self.meeting(id))
+    }
+
+    /// [`Self::now_meeting`], unless it has ended by `at`: the list can be
+    /// minutes old, and a recording after the end isn't for that meeting.
+    pub fn now_meeting_at(&self, at: OffsetDateTime) -> Option<&Meeting> {
+        self.now_meeting().filter(|m| m.end_at().is_none_or(|e| at < e))
     }
 
     /// The soonest meeting that hasn't started at `at`, other than the one on now.
@@ -175,6 +185,16 @@ mod tests {
 
     fn list(now: Option<&str>, meetings: Vec<Meeting>) -> Upcoming {
         Upcoming { available: true, connected: true, now: now.map(str::to_string), meetings }
+    }
+
+    #[test]
+    fn the_meeting_on_now_is_none_once_it_has_ended() {
+        let mut m = meeting("A", "2026-10-14T11:30:00Z", Some("teams"));
+        m.end = "2026-10-14T12:00:00Z".into();
+        let u = list(Some("g:A"), vec![m]);
+        assert_eq!(u.now_meeting_at(at("2026-10-14T11:59:59Z")).unwrap().title, "A");
+        assert!(u.now_meeting_at(at("2026-10-14T12:00:00Z")).is_none());
+        assert!(u.now_meeting_at(at("2026-10-14T14:00:00Z")).is_none());
     }
 
     #[test]
