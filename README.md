@@ -70,7 +70,7 @@ looks at window titles, websites or sound.
   answer it finishes and uploads. A recording without a call never ends by
   itself.
 - It never records without a click (Swiss law requires consent).
-- Switches in the window: "Ask me to record when a call starts", "Open
+- Switches in the window: "Ask me to record when a call or meeting starts", "Open
   Notizli when I log in" (both on by default). Only while paired.
 - `notizli-rec calls` prints what detection sees, for checking a computer.
 - Debug builds: `NOTIZLI_FAKE_CALL=<seconds>` pretends Zoom holds the
@@ -89,6 +89,16 @@ never who is invited; kept in memory only):
 - While recording, the window shows "For: <meeting> — Not this meeting".
 - The upload tells notizli.ch that meeting (`calendar_event_id`), or `none`
   after "Not this meeting". Without either, notizli.ch matches by start time.
+- The window shows the meeting on now as a ticked "This recording is for: …"
+  (untick → not linked), or the next meeting within 3 hours; the menu bar's
+  first line says "Now: …" or "Next: …". The list is fetched every 5 minutes
+  while paired, and when the window gets focus.
+- A meeting with no video link (in person or by phone) gets the box at its
+  start: "Starting now. Record it?" (once, within 2 minutes of the start,
+  gone after 60 s). Same switch as the call box, now "Ask me to record when a
+  call or meeting starts".
+- When the calendar is offered but not connected, the window suggests
+  connecting it (opens notizli.ch/settings).
 
 Recording always starts first; a slow or missing answer changes nothing.
 Debug builds: `NOTIZLI_FAKE_UPCOMING=<file.json>` reads that file instead of
