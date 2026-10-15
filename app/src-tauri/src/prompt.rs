@@ -1,15 +1,18 @@
 //! The small "Record it?" box at the top right of the screen, naming the
-//! calendar meeting when notizli.ch knows it. It never
+//! calendar meeting when notizli.ch knows it, also when a meeting with no
+//! video link starts. It never
 //! takes the keyboard from the call and is hidden from screen sharing where
 //! the system allows it.
 
 use std::sync::Mutex;
 
+use notizli_core::calendar::Upcoming;
 use notizli_engine::{AppKind, MicUser};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 use crate::calendar;
+use crate::state::AppState;
 
 const LABEL: &str = "prompt";
 const WIDTH: f64 = 360.0;
@@ -25,6 +28,9 @@ pub enum View {
         /// The calendar meeting the box names; Record records for it.
         #[serde(skip)]
         meeting: Option<String>,
+        /// Asked because a meeting with no video link started, not because of a call.
+        #[serde(skip)]
+        from_calendar: bool,
     },
     Countdown { seconds: u64 },
 }
@@ -38,6 +44,11 @@ impl View {
             _ => None,
         }
     }
+
+    /// The in-person box for this meeting.
+    fn is_in_person(&self, id: &str) -> bool {
+        matches!(self, View::Ask { meeting: Some(m), from_calendar: true, .. } if m == id)
+    }
 }
 
 /// What the box shows (the page asks for it when it loads).
@@ -49,18 +60,47 @@ pub fn ask(app: &AppHandle, user: &MicUser) {
         AppKind::Call => format!("You're in a call ({}).", user.app),
         AppKind::Browser => format!("Your browser ({}) is using the microphone.", user.app),
     };
-    show(app, View::Ask { title: title.clone(), question: "Record it?".into(), meeting: None });
+    show(app, View::Ask { title: title.clone(), question: "Record it?".into(), meeting: None, from_calendar: false });
     // Name the meeting once notizli.ch answers, if this box is still up.
     let app = app.clone();
     let user = user.clone();
     tauri::async_runtime::spawn(async move {
         let Some(up) = calendar::upcoming(&app, calendar::FRESH).await else { return };
         let Some(m) = up.now_meeting() else { return };
-        let still_asking = matches!(current(&app), Some(View::Ask { meeting: None, title: t, .. }) if t == title);
+        let still_asking = matches!(current(&app), Some(View::Ask { meeting: None, from_calendar: false, title: t, .. }) if t == title);
         if still_asking {
-            show(&app, View::Ask { title: calendar::line(m), question: named_question(&user), meeting: Some(m.id.clone()) });
+            show(&app, View::Ask { title: calendar::line(m), question: named_question(&user), meeting: Some(m.id.clone()), from_calendar: false });
         }
     });
+}
+
+/// A meeting with no video link just started: call detection can't notice
+/// it, so ask here. Only with the switch on, not recording, no box showing;
+/// once per meeting; gone after 60 s like the call box. The caller (the
+/// calendar loop) runs only while paired.
+pub fn maybe_ask_in_person(app: &AppHandle, up: &Upcoming) {
+    let state = app.state::<AppState>();
+    if state.is_recording() || current(app).is_some() || !state.settings.lock().unwrap().ask_on_calls {
+        return;
+    }
+    let mut asked = state.calendar.asked.lock().unwrap();
+    let Some(m) = up.in_person_due(time::OffsetDateTime::now_utc(), &asked) else { return };
+    asked.insert(m.id.clone());
+    drop(asked);
+    log::info!("asking whether to record (a meeting with no video link started)");
+    let id = m.id.clone();
+    show(app, in_person_view(&id, calendar::line(m)));
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        if current(&app).is_some_and(|v| v.is_in_person(&id)) {
+            hide(&app);
+        }
+    });
+}
+
+fn in_person_view(id: &str, line: String) -> View {
+    View::Ask { title: line, question: "Starting now. Record it?".into(), meeting: Some(id.to_string()), from_calendar: true }
 }
 
 /// The line under a named meeting: short enough that "Record it?" stays
@@ -137,11 +177,22 @@ mod tests {
 
     #[test]
     fn record_takes_the_meeting_and_its_line_from_the_box() {
-        let named = View::Ask { title: "Weekly sync · 14:00 · Teams".into(), question: "Record it?".into(), meeting: Some("g:1".into()) };
+        let named = View::Ask { title: "Weekly sync · 14:00 · Teams".into(), question: "Record it?".into(), meeting: Some("g:1".into()), from_calendar: false };
         assert_eq!(named.meeting(), Some(("g:1".to_string(), "Weekly sync · 14:00 · Teams".to_string())));
-        let plain = View::Ask { title: "You're in a call (Zoom).".into(), question: "Record it?".into(), meeting: None };
+        let plain = View::Ask { title: "You're in a call (Zoom).".into(), question: "Record it?".into(), meeting: None, from_calendar: false };
         assert_eq!(plain.meeting(), None);
         assert_eq!(View::Countdown { seconds: 60 }.meeting(), None);
+    }
+
+    #[test]
+    fn the_in_person_box_names_the_meeting_and_records_for_it() {
+        let v = in_person_view("g:V", "Visit · 12:00 · In person or by phone".into());
+        assert!(matches!(&v, View::Ask { question, from_calendar: true, .. } if question == "Starting now. Record it?"));
+        assert_eq!(v.meeting(), Some(("g:V".to_string(), "Visit · 12:00 · In person or by phone".to_string())));
+        assert!(v.is_in_person("g:V"));
+        assert!(!v.is_in_person("g:other"));
+        let call = View::Ask { title: "t".into(), question: "q".into(), meeting: Some("g:V".into()), from_calendar: false };
+        assert!(!call.is_in_person("g:V"), "a call box that names the meeting isn't the in-person box");
     }
 
     #[test]

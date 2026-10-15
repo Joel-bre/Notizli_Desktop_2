@@ -324,6 +324,16 @@ fn call_title(app: &str) -> String {
     format!("{app} call — {}", now_text())
 }
 
+/// The title a recording from the box gets: the in-person box keeps the
+/// desktop default, which the server replaces with "Customer — Project — …".
+fn record_title(from_calendar: bool, app: Option<String>) -> String {
+    if from_calendar {
+        default_title()
+    } else {
+        call_title(&app.unwrap_or_else(|| "Call".into()))
+    }
+}
+
 /// The window or the menu bar: `calendar` is the meeting the user picked
 /// ("g:…"/"m:…", or "none"); its line comes from the list the window showed.
 #[tauri::command]
@@ -528,13 +538,19 @@ pub fn prompt_view(app: AppHandle) -> Option<prompt::View> {
 #[tauri::command]
 pub async fn prompt_record(app: AppHandle) -> Res<()> {
     let user = app.state::<AppState>().watcher.lock().unwrap().answered();
+    let view = prompt::current(&app);
+    let from_calendar = matches!(view, Some(prompt::View::Ask { from_calendar: true, .. }));
     // The meeting and its line as the box showed them: the list may have
     // been refreshed (or failed) since.
-    let meeting = prompt::current(&app).and_then(|v| v.meeting()).map(|(id, line)| (id, Some(line)));
+    let meeting = view.and_then(|v| v.meeting()).map(|(id, line)| (id, Some(line)));
     prompt::hide(&app);
-    let name = user.map(|u| u.app).unwrap_or_else(|| "Call".into());
-    log::info!("record ({name})");
-    match start(app.clone(), Some(call_title(&name)), meeting).await {
+    let app_name = user.map(|u| u.app);
+    if from_calendar {
+        log::info!("record (calendar meeting)");
+    } else {
+        log::info!("record ({})", app_name.as_deref().unwrap_or("Call"));
+    }
+    match start(app.clone(), Some(record_title(from_calendar, app_name)), meeting).await {
         Ok(_) => {
             reveal(&app);
             Ok(())
@@ -663,4 +679,16 @@ pub fn retry_later(meta: &mut Meta, error: &str) {
     meta.attempts += 1;
     meta.last_error = Some(error.to_string());
     meta.retry_after = now_unix() + notizli_core::store::backoff_secs(meta.attempts);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_recording_from_the_in_person_box_keeps_the_desktop_default_title() {
+        assert!(record_title(true, None).starts_with("Desktop recording — "));
+        assert!(record_title(true, Some("Zoom".into())).starts_with("Desktop recording — "));
+        assert!(record_title(false, Some("Zoom".into())).starts_with("Zoom call — "));
+    }
 }

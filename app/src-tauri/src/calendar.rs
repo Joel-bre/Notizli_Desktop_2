@@ -25,6 +25,8 @@ const TICK: Duration = Duration::from_secs(15);
 pub struct CalendarState {
     /// When the list was last asked for, and the answer (None: it failed).
     latest: Mutex<Option<(Instant, Option<Upcoming>)>>,
+    /// In-person meetings already asked about since the app started.
+    pub(crate) asked: Mutex<std::collections::HashSet<String>>,
 }
 
 impl CalendarState {
@@ -80,7 +82,8 @@ pub async fn upcoming(app: &AppHandle, max_age: Duration) -> Option<Upcoming> {
     }
 }
 
-/// Keeps the list fresh for the window and the menu bar.
+/// Keeps the list fresh for the window and the menu bar, and asks about
+/// in-person meetings as they start.
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut last: Option<CalendarView> = None;
@@ -89,12 +92,15 @@ pub fn spawn(app: AppHandle) {
             if app.state::<AppState>().token().is_none() && fake().is_none() {
                 continue;
             }
-            upcoming(&app, EVERY).await;
+            let up = upcoming(&app, EVERY).await;
             // The view, not the list: "Next" also changes when a meeting starts.
             let v = view(&app);
             if v != last {
                 last = v;
                 crate::commands::changed(&app);
+            }
+            if let Some(u) = &up {
+                crate::prompt::maybe_ask_in_person(&app, u);
             }
         }
     });
