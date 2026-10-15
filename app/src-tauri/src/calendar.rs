@@ -17,12 +17,13 @@ pub const FRESH: Duration = Duration::from_secs(120);
 
 #[derive(Default)]
 pub struct CalendarState {
-    latest: Mutex<Option<(Instant, Upcoming)>>,
+    /// When the list was last asked for, and the answer (None: it failed).
+    latest: Mutex<Option<(Instant, Option<Upcoming>)>>,
 }
 
 impl CalendarState {
     pub fn cached(&self) -> Option<Upcoming> {
-        self.latest.lock().unwrap().as_ref().map(|(_, u)| u.clone())
+        self.latest.lock().unwrap().as_ref().and_then(|(_, u)| u.clone())
     }
 
     pub fn forget(&self) {
@@ -30,22 +31,32 @@ impl CalendarState {
     }
 
     fn keep(&self, u: &Upcoming) {
-        *self.latest.lock().unwrap() = Some((Instant::now(), u.clone()));
+        *self.latest.lock().unwrap() = Some((Instant::now(), Some(u.clone())));
+    }
+
+    /// notizli.ch didn't answer: no calendar until the next try.
+    fn failed(&self) {
+        *self.latest.lock().unwrap() = Some((Instant::now(), None));
+    }
+
+    /// The last answer (None: it failed) when asked for within `max_age`;
+    /// None: ask again.
+    fn fresh(&self, max_age: Duration) -> Option<Option<Upcoming>> {
+        self.latest.lock().unwrap().as_ref().filter(|(at, _)| at.elapsed() < max_age).map(|(_, u)| u.clone())
     }
 }
 
 /// The meetings, fetched again when the list is older than `max_age`. None
 /// when unpaired or notizli.ch didn't answer: the app then behaves as before.
+/// A failed fetch isn't repeated within `max_age` either.
 pub async fn upcoming(app: &AppHandle, max_age: Duration) -> Option<Upcoming> {
     let state = app.state::<AppState>();
     if let Some(u) = fake() {
         state.calendar.keep(&u);
         return Some(u);
     }
-    if let Some((at, u)) = state.calendar.latest.lock().unwrap().as_ref() {
-        if at.elapsed() < max_age {
-            return Some(u.clone());
-        }
+    if let Some(u) = state.calendar.fresh(max_age) {
+        return u;
     }
     let token = state.token()?;
     match state.api.upcoming_meetings(&token).await {
@@ -57,7 +68,7 @@ pub async fn upcoming(app: &AppHandle, max_age: Duration) -> Option<Upcoming> {
         }
         Err(e) => {
             log::info!("calendar not read: {e}");
-            state.calendar.forget();
+            state.calendar.failed();
             None
         }
     }
@@ -103,4 +114,23 @@ fn fake() -> Option<Upcoming> {
 #[cfg(not(debug_assertions))]
 fn fake() -> Option<Upcoming> {
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_fetch_is_not_repeated_until_the_list_would_be_stale() {
+        let c = CalendarState::default();
+        assert!(c.fresh(FRESH).is_none(), "nothing fetched yet");
+        c.failed();
+        assert_eq!(c.fresh(FRESH), Some(None), "failed just now: no calendar, no new request");
+        assert!(c.fresh(Duration::ZERO).is_none(), "stale: ask again");
+        assert!(c.cached().is_none());
+        c.keep(&Upcoming { available: true, ..Default::default() });
+        assert!(c.fresh(FRESH).unwrap().unwrap().available);
+        c.forget();
+        assert!(c.fresh(FRESH).is_none());
+    }
 }

@@ -281,7 +281,6 @@ pub async fn confirm_pair(app: AppHandle) -> Res<String> {
 #[tauri::command]
 pub fn unpair(app: AppHandle, state: State<'_, AppState>) -> Res<()> {
     state.set_token(None)?;
-    state.calendar.forget();
     state.update_settings(|s| {
         s.paired_email = None;
         s.device_label = None;
@@ -307,8 +306,20 @@ fn call_title(app: &str) -> String {
     format!("{app} call — {}", now_text())
 }
 
+/// The window or the menu bar: `calendar` is the meeting the user picked
+/// ("g:…"/"m:…", or "none"); its line comes from the list the window showed.
 #[tauri::command]
 pub async fn start_recording(app: AppHandle, title: Option<String>, calendar: Option<String>) -> Res<RecordingView> {
+    let pick = calendar.map(|id| {
+        let line = app.state::<AppState>().calendar.cached().and_then(|u| u.meeting(&id).map(crate::calendar::line));
+        (id, line)
+    });
+    start(app, title, pick).await
+}
+
+/// `pick`: the meeting the recording is for and its line, or None to ask
+/// notizli.ch once the recording runs.
+async fn start(app: AppHandle, title: Option<String>, pick: Option<(String, Option<String>)>) -> Res<RecordingView> {
     let state = app.state::<AppState>();
     if state.is_recording() {
         return Err("Already recording.".into());
@@ -355,16 +366,17 @@ pub async fn start_recording(app: AppHandle, title: Option<String>, calendar: Op
     meta.channel_layout = recorder.layout().as_str().to_string();
     // The meeting the user picked ("g:…"/"m:…", or "none"); without a pick,
     // attach_now below asks notizli.ch once the recording runs.
-    if let Some(c) = &calendar {
-        meta.calendar_ref = Some(c.clone());
-        meta.calendar_line = state.calendar.cached().and_then(|u| u.meeting(c).map(crate::calendar::line));
+    let picked = pick.is_some();
+    if let Some((id, line)) = pick {
+        meta.calendar_ref = Some(id);
+        meta.calendar_line = line;
     }
     let _ = state.store.save(&meta);
     let active = Active { recorder, meta, started: Instant::now(), labels, _awake: Awake::start() };
     let view = recording_view(&active);
     *state.recording.lock().unwrap() = Some(active);
     changed(&app);
-    if calendar.is_none() {
+    if !picked {
         crate::calendar::attach_now(&app, view.id.clone());
     }
     Ok(view)
@@ -498,14 +510,13 @@ pub fn prompt_view(app: AppHandle) -> Option<prompt::View> {
 #[tauri::command]
 pub async fn prompt_record(app: AppHandle) -> Res<()> {
     let user = app.state::<AppState>().watcher.lock().unwrap().answered();
-    let meeting = match prompt::current(&app) {
-        Some(prompt::View::Ask { meeting, .. }) => meeting,
-        _ => None,
-    };
+    // The meeting and its line as the box showed them: the list may have
+    // been refreshed (or failed) since.
+    let meeting = prompt::current(&app).and_then(|v| v.meeting()).map(|(id, line)| (id, Some(line)));
     prompt::hide(&app);
     let name = user.map(|u| u.app).unwrap_or_else(|| "Call".into());
     log::info!("record ({name})");
-    match start_recording(app.clone(), Some(call_title(&name)), meeting).await {
+    match start(app.clone(), Some(call_title(&name)), meeting).await {
         Ok(_) => {
             reveal(&app);
             Ok(())

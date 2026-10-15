@@ -29,6 +29,17 @@ pub enum View {
     Countdown { seconds: u64 },
 }
 
+impl View {
+    /// The meeting the box names and its line ("Weekly sync · 14:00 ·
+    /// Teams"): Record records for it.
+    pub fn meeting(&self) -> Option<(String, String)> {
+        match self {
+            View::Ask { title, meeting: Some(id), .. } => Some((id.clone(), title.clone())),
+            _ => None,
+        }
+    }
+}
+
 /// What the box shows (the page asks for it when it loads).
 #[derive(Default)]
 pub struct PromptState(Mutex<Option<View>>);
@@ -122,6 +133,15 @@ mod tests {
 
     fn user(app: &str, kind: AppKind) -> MicUser {
         MicUser { app: app.into(), kind }
+    }
+
+    #[test]
+    fn record_takes_the_meeting_and_its_line_from_the_box() {
+        let named = View::Ask { title: "Weekly sync · 14:00 · Teams".into(), question: "Record it?".into(), meeting: Some("g:1".into()) };
+        assert_eq!(named.meeting(), Some(("g:1".to_string(), "Weekly sync · 14:00 · Teams".to_string())));
+        let plain = View::Ask { title: "You're in a call (Zoom).".into(), question: "Record it?".into(), meeting: None };
+        assert_eq!(plain.meeting(), None);
+        assert_eq!(View::Countdown { seconds: 60 }.meeting(), None);
     }
 
     #[test]
