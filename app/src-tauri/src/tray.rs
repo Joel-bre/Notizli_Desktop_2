@@ -19,6 +19,9 @@ pub struct Tray {
     /// "Restart to update to …", in the menu only while an update is ready.
     update: MenuItem<Wry>,
     update_shown: Mutex<bool>,
+    /// "Now: …" / "Next: …", greyed out, only while there is one.
+    calendar: MenuItem<Wry>,
+    calendar_shown: Mutex<bool>,
 }
 
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
@@ -42,7 +45,8 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     }
     tray.build(app)?;
     let update = MenuItem::with_id(app, "update", "Restart to update", true, None::<&str>)?;
-    app.manage(Tray { menu, record, update, update_shown: Mutex::new(false) });
+    let calendar = MenuItem::with_id(app, "calendar", "", false, None::<&str>)?;
+    app.manage(Tray { menu, record, update, update_shown: Mutex::new(false), calendar, calendar_shown: Mutex::new(false) });
     Ok(())
 }
 
@@ -60,6 +64,18 @@ pub fn refresh(app: &AppHandle) {
             let changed = if ready.is_some() { t.menu.insert(&t.update, 0) } else { t.menu.remove(&t.update) };
             if changed.is_ok() {
                 *shown = ready.is_some();
+            }
+        }
+        // After the update line when there is one.
+        let line = crate::calendar::view(app).and_then(|v| crate::calendar::menu_line(&v));
+        if let Some(l) = &line {
+            let _ = t.calendar.set_text(l);
+        }
+        let mut cal_shown = t.calendar_shown.lock().unwrap();
+        if line.is_some() != *cal_shown {
+            let changed = if line.is_some() { t.menu.insert(&t.calendar, usize::from(*shown)) } else { t.menu.remove(&t.calendar) };
+            if changed.is_ok() {
+                *cal_shown = line.is_some();
             }
         }
     }

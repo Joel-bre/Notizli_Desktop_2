@@ -25,6 +25,10 @@ pub fn meeting_url(meeting_id: &str) -> String {
     format!("{}/meetings/{meeting_id}", base_url())
 }
 
+pub fn settings_url() -> String {
+    format!("{}/settings", base_url())
+}
+
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
 pub enum ApiError {
     #[error("Can't reach Notizli. Check the internet connection.")]
@@ -264,6 +268,11 @@ impl Api {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_settings_page_is_on_the_same_site() {
+        assert_eq!(settings_url(), format!("{}/settings", base_url()));
+    }
     use crate::testserver::{Reply, TestServer};
 
     #[tokio::test]

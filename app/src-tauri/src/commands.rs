@@ -38,6 +38,8 @@ pub struct StateView {
     pair_request: Option<PairRequestView>,
     last_done: Option<DoneView>,
     folder: String,
+    /// The calendar lines for the idle window; None: nothing to show.
+    calendar: Option<crate::calendar::CalendarView>,
 }
 
 #[derive(Serialize, Clone)]
@@ -147,6 +149,7 @@ pub fn get_state(app: AppHandle, state: State<'_, AppState>) -> StateView {
             title: title.clone(),
         }),
         folder: state.store.folder().display().to_string(),
+        calendar: crate::calendar::view(&app),
     }
 }
 
@@ -211,6 +214,21 @@ pub fn open_meeting(app: AppHandle, meeting_id: String) -> Res<()> {
         return Err("invalid meeting".into());
     }
     app.opener().open_url(api::meeting_url(&meeting_id), None::<&str>).map_err(|e| e.to_string())
+}
+
+/// The window got focus: a list older than 2 minutes is fetched again.
+#[tauri::command]
+pub async fn calendar_refresh(app: AppHandle) {
+    let before = crate::calendar::view(&app);
+    crate::calendar::upcoming(&app, crate::calendar::FRESH).await;
+    if crate::calendar::view(&app) != before {
+        changed(&app);
+    }
+}
+
+#[tauri::command]
+pub fn open_calendar_settings(app: AppHandle) -> Res<()> {
+    app.opener().open_url(api::settings_url(), None::<&str>).map_err(|e| e.to_string())
 }
 
 // ---- pairing ------------------------------------------------------------------
@@ -478,7 +496,7 @@ pub fn install_update(app: AppHandle) -> Res<()> {
 #[tauri::command]
 pub fn set_ask_on_calls(app: AppHandle, state: State<'_, AppState>, on: bool) {
     state.update_settings(|s| s.ask_on_calls = on);
-    log::info!("ask to record when a call starts: {on}");
+    log::info!("ask to record when a call or meeting starts: {on}");
     changed(&app);
 }
 
