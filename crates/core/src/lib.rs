@@ -3,6 +3,7 @@
 
 pub mod account;
 pub mod api;
+pub mod calendar;
 pub mod pairing;
 pub mod store;
 

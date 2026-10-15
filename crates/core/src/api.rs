@@ -1,4 +1,4 @@
-//! The Notizli server API: pairing and upload (contract fixed by the server).
+//! The Notizli server API: pairing, upload and upcoming meetings (contract fixed by the server).
 
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -8,6 +8,8 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio_util::io::ReaderStream;
+
+use crate::calendar::Upcoming;
 
 /// Base URL of the Notizli server; override at build time with
 /// `NOTIZLI_BASE_URL=https://staging.example cargo build`.
@@ -76,6 +78,9 @@ pub struct UploadMeta {
     /// ISO-8601 time the recording started.
     pub started_at: String,
     pub channel_layout: String,
+    /// The calendar meeting ("g:…"/"m:…"), or "none" for "Not this meeting";
+    /// None lets the server match by `started_at`.
+    pub calendar_event_id: Option<String>,
 }
 
 #[derive(Clone)]
@@ -184,6 +189,28 @@ impl Api {
         })
     }
 
+    /// The user's meetings in progress or within 3 hours: titles and times
+    /// only. Any failure, including a server that predates the route, is an
+    /// error the caller treats as "no calendar".
+    pub async fn upcoming_meetings(&self, device_token: &str) -> Result<Upcoming, ApiError> {
+        let resp = self
+            .http
+            .get(format!("{}/api/public/recorder/upcoming-meetings", self.base))
+            .bearer_auth(device_token)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+            .map_err(network)?;
+        if resp.status().is_success() {
+            return resp.json::<Upcoming>().await.map_err(|e| ApiError::Server(format!("unexpected answer: {e}")));
+        }
+        let (status, msg) = read_error(resp).await;
+        Err(match status {
+            401 => ApiError::Unauthorized,
+            _ => ApiError::Server(server_detail(status, &msg)),
+        })
+    }
+
     /// Upload a recording from disk, streaming it (never all in memory).
     /// `sent` is updated with the bytes sent so far.
     pub async fn upload(
@@ -212,11 +239,14 @@ impl Api {
             .mime_str(mime)
             .map_err(|e| ApiError::BadRequest(e.to_string()))?;
         let title: String = meta.title.chars().take(200).collect();
-        let form = reqwest::multipart::Form::new()
+        let mut form = reqwest::multipart::Form::new()
             .text("title", title)
             .text("started_at", meta.started_at.clone())
-            .text("channel_layout", meta.channel_layout.clone())
-            .part("audio", part);
+            .text("channel_layout", meta.channel_layout.clone());
+        if let Some(id) = &meta.calendar_event_id {
+            form = form.text("calendar_event_id", id.clone());
+        }
+        let form = form.part("audio", part);
         let resp = self.http.post(url).bearer_auth(device_token).multipart(form).send().await.map_err(network)?;
         if resp.status().is_success() {
             return resp.json::<Uploaded>().await.map_err(|e| ApiError::Server(format!("unexpected answer: {e}")));
@@ -272,7 +302,7 @@ mod tests {
         let file = dir.join("rec.webm");
         std::fs::write(&file, vec![7u8; 300_000]).unwrap();
         let api = Api::new(&srv.url());
-        let meta = UploadMeta { title: "Weekly".into(), started_at: "2026-09-26T08:00:00Z".into(), channel_layout: "mic_remote".into() };
+        let meta = UploadMeta { title: "Weekly".into(), started_at: "2026-09-26T08:00:00Z".into(), channel_layout: "mic_remote".into(), calendar_event_id: None };
         let sent = Arc::new(AtomicU64::new(0));
         let ok = api.upload(None, "tok", &file, "audio/webm", &meta, sent.clone()).await.unwrap();
         assert_eq!(ok.meeting_id, "m-1");
@@ -298,6 +328,7 @@ mod tests {
             assert!(body.contains(needle), "missing {needle:?}");
         }
         assert!(r.body.len() > 300_000);
+        assert!(!body.contains("calendar_event_id"), "no meeting → no field (time match)");
     }
 
     #[tokio::test]
@@ -306,5 +337,41 @@ mod tests {
         let e = api.pair_preview("ccp_pair_x").await.unwrap_err();
         assert!(matches!(e, ApiError::Network(_)));
         assert!(e.retryable());
+    }
+
+    #[tokio::test]
+    async fn upcoming_meetings_with_the_device_token() {
+        let srv = TestServer::start(vec![
+            Reply::json(200, r#"{"available":true,"connected":false,"providers":[],"now":null,"meetings":[]}"#),
+            Reply::text(404, "Not found"),
+        ])
+        .await;
+        let api = Api::new(&srv.url());
+        let u = api.upcoming_meetings("tok").await.unwrap();
+        assert!(u.available && !u.connected && u.meetings.is_empty());
+        assert!(api.upcoming_meetings("tok").await.is_err());
+        let r = &srv.requests()[0];
+        assert_eq!(r.path, "/api/public/recorder/upcoming-meetings");
+        assert_eq!(r.header("authorization").as_deref(), Some("Bearer tok"));
+    }
+
+    #[tokio::test]
+    async fn upload_names_the_calendar_meeting_when_known() {
+        let srv = TestServer::start(vec![Reply::json(202, r#"{"meeting_id":"m-2"}"#)]).await;
+        let dir = std::env::temp_dir().join(format!("notizli-core-upload-cal-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("rec.webm");
+        std::fs::write(&file, vec![7u8; 1000]).unwrap();
+        let api = Api::new(&srv.url());
+        let meta = UploadMeta {
+            title: "Zoom call — 14 Oct 2026, 15:03".into(),
+            started_at: "2026-10-14T13:03:00Z".into(),
+            channel_layout: "mic_remote".into(),
+            calendar_event_id: Some("m:AAMk1=/+x".into()),
+        };
+        api.upload(None, "tok", &file, "audio/webm", &meta, Arc::new(AtomicU64::new(0))).await.unwrap();
+        let body = srv.requests()[0].body_text();
+        assert!(body.contains("name=\"calendar_event_id\"\r\n\r\nm:AAMk1=/+x"), "{body}");
+        assert!(body.contains("name=\"title\"\r\n\r\nZoom call — 14 Oct 2026, 15:03"));
     }
 }

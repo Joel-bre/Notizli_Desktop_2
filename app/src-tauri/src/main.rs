@@ -6,6 +6,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod calendar;
 mod detect;
 mod logfile;
 mod prompt;
@@ -107,6 +108,7 @@ fn main() {
             commands::start_recording,
             commands::finish_recording,
             commands::discard_recording,
+            commands::not_this_meeting,
             commands::quit_app,
             commands::upload_now,
             commands::show_in_folder,

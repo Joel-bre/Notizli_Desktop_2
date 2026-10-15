@@ -51,6 +51,14 @@ pub struct Meta {
     /// Recovered after the app stopped mid-recording.
     #[serde(default)]
     pub recovered: bool,
+    /// The calendar meeting this recording is for: "g:…"/"m:…", or "none"
+    /// when the user said "Not this meeting". None: the server matches by time.
+    #[serde(default)]
+    pub calendar_ref: Option<String>,
+    /// That meeting's line ("Weekly sync · 14:00 · Teams"), shown while
+    /// recording; never uploaded.
+    #[serde(default)]
+    pub calendar_line: Option<String>,
 }
 
 pub struct Store {
@@ -123,6 +131,8 @@ impl Store {
             last_error: None,
             retry_after: 0,
             recovered: false,
+            calendar_ref: None,
+            calendar_line: None,
         };
         self.save(&meta)?;
         Ok(meta)
@@ -272,5 +282,15 @@ mod tests {
         assert!(rec[0].recovered);
         assert_eq!(s.get(&meta.id).unwrap().status, Status::Ready);
         assert!(s.get(&empty.id).is_none(), "an empty interrupted recording is dropped");
+    }
+
+    #[test]
+    fn old_meta_without_calendar_fields_loads() {
+        let m: Meta = serde_json::from_str(
+            r#"{"id":"a","title":"Zoom call — 1 Oct 2026, 09:00","started_at":"2026-10-01T07:00:00Z","channel_layout":"mono","mime":"audio/webm","status":"ready"}"#,
+        )
+        .unwrap();
+        assert_eq!(m.calendar_ref, None);
+        assert_eq!(m.calendar_line, None);
     }
 }

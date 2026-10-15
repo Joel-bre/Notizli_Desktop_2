@@ -18,7 +18,7 @@ To try it: [TESTING.md](TESTING.md).
 | Path | What |
 |---|---|
 | `crates/engine` | Recording engine: capture per platform, mixer, Opus encoder, crash-safe WebM writer, health report. |
-| `crates/core` | notizli.ch API (pairing, upload), pairing links, device token in the OS credential store, the queue of recordings waiting for upload. |
+| `crates/core` | notizli.ch API (pairing, upload, upcoming meetings), pairing links, device token in the OS credential store, the queue of recordings waiting for upload. |
 | `crates/rec-cli` | `notizli-rec`: records to a file and prints a plain result. A hardware check without the app; `record-test.bat` runs it by double-click on Windows. |
 | `app/src-tauri` | The app's Rust side: commands for the window, uploader, deep links, keep-awake, quit guard, call detection, the "Record this call?" box, the menu bar icon. |
 | `app/ui` | The window: plain HTML/CSS/JS in the Notizli brand (no framework, no build step). |
@@ -77,6 +77,22 @@ looks at window titles, websites or sound.
   microphone for that long, to try the box without a call.
 
 Design: `docs/superpowers/specs/2026-10-08-call-detection-design.md`.
+
+
+## Calendar
+
+When the paired account has a calendar connected on notizli.ch, the recorder
+asks notizli.ch for the meetings of the next 3 hours (titles and times only,
+never who is invited; kept in memory only):
+
+- The "Record it?" box names the meeting on now ("Weekly sync · 14:00 · Teams").
+- While recording, the window shows "For: <meeting> — Not this meeting".
+- The upload tells notizli.ch that meeting (`calendar_event_id`), or `none`
+  after "Not this meeting". Without either, notizli.ch matches by start time.
+
+Recording always starts first; a slow or missing answer changes nothing.
+Debug builds: `NOTIZLI_FAKE_UPCOMING=<file.json>` reads that file instead of
+asking notizli.ch. Design: `docs/superpowers/specs/2026-10-14-calendar-design.md`.
 
 ## Automatic updates
 

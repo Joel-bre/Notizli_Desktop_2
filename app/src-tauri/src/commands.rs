@@ -47,6 +47,10 @@ pub struct RecordingView {
     elapsed_ms: u64,
     layout: &'static str,
     labels: Labels,
+    /// "Weekly sync · 14:00 · Teams": the calendar meeting this recording is for.
+    meeting: Option<String>,
+    /// The user said "Not this meeting".
+    not_linked: bool,
 }
 
 #[derive(Serialize)]
@@ -89,6 +93,8 @@ fn recording_view(a: &Active) -> RecordingView {
         elapsed_ms: a.started.elapsed().as_millis() as u64,
         layout: a.recorder.layout().as_str(),
         labels: a.labels.lock().unwrap().clone(),
+        meeting: a.meta.calendar_line.clone().filter(|_| a.meta.calendar_ref.as_deref() != Some("none")),
+        not_linked: a.meta.calendar_ref.as_deref() == Some("none"),
     }
 }
 
@@ -275,6 +281,7 @@ pub async fn confirm_pair(app: AppHandle) -> Res<String> {
 #[tauri::command]
 pub fn unpair(app: AppHandle, state: State<'_, AppState>) -> Res<()> {
     state.set_token(None)?;
+    state.calendar.forget();
     state.update_settings(|s| {
         s.paired_email = None;
         s.device_label = None;
@@ -301,7 +308,7 @@ fn call_title(app: &str) -> String {
 }
 
 #[tauri::command]
-pub async fn start_recording(app: AppHandle, title: Option<String>) -> Res<RecordingView> {
+pub async fn start_recording(app: AppHandle, title: Option<String>, calendar: Option<String>) -> Res<RecordingView> {
     let state = app.state::<AppState>();
     if state.is_recording() {
         return Err("Already recording.".into());
@@ -346,11 +353,20 @@ pub async fn start_recording(app: AppHandle, title: Option<String>) -> Res<Recor
     };
     log::info!("recording {} started ({})", meta.id, recorder.layout().as_str());
     meta.channel_layout = recorder.layout().as_str().to_string();
+    // The meeting the user picked ("g:…"/"m:…", or "none"); without a pick,
+    // attach_now below asks notizli.ch once the recording runs.
+    if let Some(c) = &calendar {
+        meta.calendar_ref = Some(c.clone());
+        meta.calendar_line = state.calendar.cached().and_then(|u| u.meeting(c).map(crate::calendar::line));
+    }
     let _ = state.store.save(&meta);
     let active = Active { recorder, meta, started: Instant::now(), labels, _awake: Awake::start() };
     let view = recording_view(&active);
     *state.recording.lock().unwrap() = Some(active);
     changed(&app);
+    if calendar.is_none() {
+        crate::calendar::attach_now(&app, view.id.clone());
+    }
     Ok(view)
 }
 
@@ -416,6 +432,17 @@ pub async fn discard_recording(app: AppHandle) -> Res<()> {
     Ok(())
 }
 
+/// "Not this meeting" while recording: upload with calendar_event_id=none.
+#[tauri::command]
+pub fn not_this_meeting(app: AppHandle, state: State<'_, AppState>) {
+    if let Some(a) = state.recording.lock().unwrap().as_mut() {
+        a.meta.calendar_ref = Some("none".into());
+        a.meta.calendar_line = None;
+        let _ = state.store.save(&a.meta);
+    }
+    changed(&app);
+}
+
 /// Quit, saving a recording in progress first (it uploads on next start).
 #[tauri::command]
 pub async fn quit_app(app: AppHandle) -> Res<()> {
@@ -471,10 +498,14 @@ pub fn prompt_view(app: AppHandle) -> Option<prompt::View> {
 #[tauri::command]
 pub async fn prompt_record(app: AppHandle) -> Res<()> {
     let user = app.state::<AppState>().watcher.lock().unwrap().answered();
+    let meeting = match prompt::current(&app) {
+        Some(prompt::View::Ask { meeting, .. }) => meeting,
+        _ => None,
+    };
     prompt::hide(&app);
     let name = user.map(|u| u.app).unwrap_or_else(|| "Call".into());
     log::info!("record ({name})");
-    match start_recording(app.clone(), Some(call_title(&name))).await {
+    match start_recording(app.clone(), Some(call_title(&name)), meeting).await {
         Ok(_) => {
             reveal(&app);
             Ok(())
