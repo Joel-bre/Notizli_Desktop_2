@@ -53,13 +53,14 @@ To try it: [TESTING.md](TESTING.md).
   video) about as loud as the call channel. The call channel is exactly what
   the computer played, so it is the reference: every 10 ms the mixer runs
   WebRTC's AEC3 (crate `aec3`, pure Rust, `crates/engine/src/echo.rs`) and the
-  cleaned microphone replaces the raw one. Echo removal only, no noise
-  suppression or gain control, with a gentler suppressor than WebRTC's default
+  cleaned microphone replaces the raw one. Echo removal only (plus AEC3's
+  high-pass filter below ~80 Hz), no noise suppression or gain control, with a gentler suppressor than WebRTC's default
   (the default chopped the user's voice when both sides talked at once). On a
   laptop-speaker test it removed 27-44 dB of echo and kept the voice alone
   within ~1 dB; when both talk at once the voice can still sound a little
   choppy. The first seconds, and a moment after a speaker change, let some echo
-  through while it adapts. Switch: "Remove the call's sound from my
+  through while it adapts. If it fails or crashes, the recording carries on
+  with the raw microphone and the health report says so. Switch: "Remove the call's sound from my
   microphone" (on by default); `notizli-rec --no-echo-cancel`.
 - **Health report.** Every recording gets `<id>.health.json`: levels of both
   sides every 10 s, what was being recorded, device switches, gaps, and a plain

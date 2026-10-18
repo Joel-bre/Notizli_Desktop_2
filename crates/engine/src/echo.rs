@@ -10,6 +10,7 @@
 //! laptop-speaker recording (2026-10-18), the default chopped the user's voice
 //! whenever both sides talked at once. This tuning still removed 27-44 dB of
 //! echo while only the call played and kept the voice alone within ~1 dB.
+//! The pipeline's high-pass filter (below ~80 Hz) stays on, as in that test.
 //! `aec3`'s API is still changing; the version is pinned and this file is the
 //! only place that uses it.
 
@@ -26,6 +27,7 @@ const CALL_ACTIVE: f64 = 1e-6;
 /// Echo cancellation in the health report: numbers only, no audio.
 #[derive(Clone, Debug, Default, Serialize, PartialEq)]
 pub struct EchoSummary {
+    /// It ran for the whole recording (false if it was off, couldn't start, or stopped).
     pub on: bool,
     /// How much quieter the microphone was after cancellation while the call
     /// played (includes the user's own voice, so it understates the echo).
@@ -39,6 +41,9 @@ pub struct EchoCanceller {
     before: f64,
     after: f64,
     failed: bool,
+    /// Tests: make the next call into `aec3` panic.
+    #[cfg(test)]
+    panic_next: bool,
 }
 
 fn gentle_config() -> EchoCanceller3Config {
@@ -69,6 +74,8 @@ impl EchoCanceller {
                 before: 0.0,
                 after: 0.0,
                 failed: false,
+                #[cfg(test)]
+                panic_next: false,
             }),
             Err(e) => {
                 log::warn!("echo cancellation unavailable: {e:?}");
@@ -84,10 +91,27 @@ impl EchoCanceller {
             return;
         }
         let call_active = call.iter().map(|s| f64::from(*s) * f64::from(*s)).sum::<f64>() / call.len() as f64 > CALL_ACTIVE;
-        let produced = self
-            .pipeline
-            .handle_render_frame(call)
-            .and_then(|_| self.pipeline.process_capture_frame(mic, &mut self.out));
+        // A panic inside `aec3` must not take the mixer thread (and the rest of
+        // the meeting) with it: the output only ever lands in `self.out`, so the
+        // mic is still raw when one is caught.
+        let (pipeline, out) = (&mut self.pipeline, &mut self.out);
+        #[cfg(test)]
+        let panic_next = self.panic_next;
+        let produced = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            #[cfg(test)]
+            if panic_next {
+                panic!("aec3 failed (test)");
+            }
+            pipeline.handle_render_frame(call).and_then(|_| pipeline.process_capture_frame(mic, out))
+        }));
+        let produced = match produced {
+            Ok(r) => r,
+            Err(_) => {
+                log::warn!("echo cancellation crashed, keeping the raw microphone");
+                self.failed = true;
+                return;
+            }
+        };
         match produced {
             Ok(true) => {
                 if call_active {
@@ -106,7 +130,7 @@ impl EchoCanceller {
 
     pub fn summary(&self) -> EchoSummary {
         let removed_db = (self.before > 0.0 && self.after > 0.0).then(|| (10.0 * (self.before / self.after).log10()) as f32);
-        EchoSummary { on: true, removed_db }
+        EchoSummary { on: !self.failed, removed_db }
     }
 }
 
@@ -170,6 +194,21 @@ mod tests {
         let summary = ec.summary();
         assert!(summary.on);
         assert!(summary.removed_db.unwrap() >= 15.0, "{summary:?}");
+    }
+
+    #[test]
+    fn a_crash_inside_the_canceller_keeps_the_raw_mic_and_recording_goes_on() {
+        let mut ec = EchoCanceller::new().expect("echo canceller");
+        ec.panic_next = true;
+        let raw = noise(5, STEP, 0.1);
+        let call = noise(6, STEP, 0.1);
+        let mut mic = raw.clone();
+        ec.process(&mut mic, &call);
+        assert_eq!(mic, raw, "the raw mic is kept");
+        let mut next = raw.clone();
+        ec.process(&mut next, &call);
+        assert_eq!(next, raw, "and stays raw for the rest of the recording");
+        assert!(!ec.summary().on, "the report says it stopped");
     }
 
     #[test]

@@ -80,8 +80,15 @@ pub fn run(
         }
         thread::sleep(Duration::from_millis(5));
     }
-    if let Some(c) = &canceller {
-        analyzer.set_echo(c.summary());
+    match &canceller {
+        Some(c) => {
+            if !c.summary().on {
+                analyzer.note("echo cancellation stopped during the recording; the rest has the raw microphone".into());
+            }
+            analyzer.set_echo(c.summary());
+        }
+        None if echo && other.is_some() => analyzer.note("echo cancellation could not start; the microphone is raw".into()),
+        None => {}
     }
     analyzer
 }
