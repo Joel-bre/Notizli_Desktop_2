@@ -66,6 +66,9 @@ pub struct RecorderConfig {
     pub mic_device: Option<String>,
     /// Record the call's sound as channel 1.
     pub capture_other_side: bool,
+    /// Remove the call's sound from the microphone, with the call channel as
+    /// the reference (see `echo.rs`). Only applies when the call is recorded.
+    pub echo_cancellation: bool,
     /// Stored in the file, e.g. "Notizli 0.1.0".
     pub writing_app: String,
 }
@@ -139,9 +142,10 @@ impl Recorder {
         let stop = Arc::new(AtomicBool::new(false));
         let analyzer = Analyzer::new(events, mic.clone(), other.clone());
         let mixer_stop = stop.clone();
+        let echo = cfg.echo_cancellation;
         let mixer = thread::Builder::new()
             .name("notizli-mixer".into())
-            .spawn(move || mixer::run(mic, other, analyzer, tx, mixer_stop))?;
+            .spawn(move || mixer::run(mic, other, analyzer, tx, mixer_stop, echo))?;
         Ok(Recorder {
             stop,
             mixer: Some(mixer),
@@ -241,7 +245,7 @@ mod tests {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let s2 = seen.clone();
         let events: Events = Arc::new(move |e| s2.lock().unwrap().push(e));
-        let cfg = RecorderConfig { path: path.clone(), mic_device: None, capture_other_side: true, writing_app: "test".into() };
+        let cfg = RecorderConfig { path: path.clone(), mic_device: None, capture_other_side: true, echo_cancellation: true, writing_app: "test".into() };
         // Microphone: 440 Hz at 44.1 kHz; call: 1 kHz at 48 kHz, silent for the first second.
         let starters = fake::starters(fake::Tone { rate: 44_100, hz: 440.0, silent_until_ms: 0 }, Some(fake::Tone { rate: 48_000, hz: 1_000.0, silent_until_ms: 1_000 }));
         let rec = Recorder::start_with(cfg, events, starters).unwrap();
@@ -254,6 +258,7 @@ mod tests {
         assert!(levels[0] > -20.0 && levels[1] > -25.0, "{levels:?}");
         assert!(done.health_path.exists());
         assert_eq!(done.health.other.as_ref().unwrap().label, "fake call");
+        assert!(done.health.echo.on, "echo cancellation runs when the call is recorded");
         let levels_events = seen.lock().unwrap().iter().filter(|e| matches!(e, RecorderEvent::Levels { .. })).count();
         assert!(levels_events >= 25, "{levels_events} level events");
     }
@@ -264,20 +269,34 @@ mod tests {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let s2 = seen.clone();
         let events: Events = Arc::new(move |e| s2.lock().unwrap().push(e));
-        let cfg = RecorderConfig { path: path.clone(), mic_device: None, capture_other_side: true, writing_app: "test".into() };
+        let cfg = RecorderConfig { path: path.clone(), mic_device: None, capture_other_side: true, echo_cancellation: true, writing_app: "test".into() };
         let rec = Recorder::start_with(cfg, events, fake::starters(fake::Tone { rate: 48_000, hz: 300.0, silent_until_ms: 0 }, None)).unwrap();
         assert_eq!(rec.layout(), ChannelLayout::Mono);
         thread::sleep(Duration::from_millis(500));
         let done = rec.stop().unwrap();
         assert_eq!(crate::webm::read_packets(&done.path).unwrap().0, 1);
         assert!(seen.lock().unwrap().iter().any(|e| matches!(e, RecorderEvent::Notice { .. })));
+        assert!(!done.health.echo.on, "no call channel, nothing to cancel");
+    }
+
+    #[test]
+    fn echo_cancellation_can_be_turned_off() {
+        let path = crate::webm::tests::temp_path("no-echo.webm");
+        let events: Events = Arc::new(|_| {});
+        let cfg = RecorderConfig { path: path.clone(), mic_device: None, capture_other_side: true, echo_cancellation: false, writing_app: "test".into() };
+        let starters = fake::starters(fake::Tone { rate: 48_000, hz: 300.0, silent_until_ms: 0 }, Some(fake::Tone { rate: 48_000, hz: 1_000.0, silent_until_ms: 0 }));
+        let rec = Recorder::start_with(cfg, events, starters).unwrap();
+        thread::sleep(Duration::from_millis(500));
+        let done = rec.stop().unwrap();
+        assert!(!done.health.echo.on);
+        assert_eq!(done.health.echo.removed_db, None);
     }
 
     #[test]
     fn discard_removes_the_files() {
         let path = crate::webm::tests::temp_path("discard.webm");
         let events: Events = Arc::new(|_| {});
-        let cfg = RecorderConfig { path: path.clone(), mic_device: None, capture_other_side: false, writing_app: "test".into() };
+        let cfg = RecorderConfig { path: path.clone(), mic_device: None, capture_other_side: false, echo_cancellation: false, writing_app: "test".into() };
         let rec = Recorder::start_with(cfg, events, fake::starters(fake::Tone { rate: 48_000, hz: 300.0, silent_until_ms: 0 }, None)).unwrap();
         thread::sleep(Duration::from_millis(200));
         rec.discard().unwrap();

@@ -10,6 +10,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::analyzer::Analyzer;
+use crate::echo::EchoCanceller;
 use crate::source::Source;
 use crate::SAMPLE_RATE;
 
@@ -24,6 +25,7 @@ pub fn run(
     mut analyzer: Analyzer,
     out: Sender<Vec<f32>>,
     stop: Arc<AtomicBool>,
+    echo: bool,
 ) -> Analyzer {
     let channels = if other.is_some() { 2 } else { 1 };
     mic.begin();
@@ -35,6 +37,11 @@ pub fn run(
     let mut mic_buf = vec![0f32; STEP];
     let mut other_buf = vec![0f32; STEP];
     let mut chunk: Vec<f32> = Vec::with_capacity(STEP * channels * CHUNK_STEPS);
+    // Built on this thread: it runs every 10 ms right here.
+    let mut canceller = if echo && other.is_some() { EchoCanceller::new() } else { None };
+    // A reopened call capture (rebuilt tap, new speaker) can change the timing
+    // between the call and its echo: the canceller then starts afresh.
+    let mut call_opens = other.as_ref().map_or(0, |o| o.stats().opens);
     loop {
         let stopping = stop.load(Ordering::SeqCst);
         let due = (start.elapsed().as_nanos() * u128::from(SAMPLE_RATE) / 1_000_000_000) as u64;
@@ -44,6 +51,14 @@ pub fn run(
             match &other {
                 Some(o) => {
                     o.take(&mut other_buf, now);
+                    if let Some(c) = canceller.as_mut() {
+                        let opens = o.stats().opens;
+                        if opens != call_opens {
+                            call_opens = opens;
+                            c.restart();
+                        }
+                        c.process(&mut mic_buf, &other_buf);
+                    }
                     analyzer.block(&mic_buf, Some(&other_buf));
                     for (m, o) in mic_buf.iter().zip(&other_buf) {
                         chunk.push(*m);
@@ -72,6 +87,16 @@ pub fn run(
             break;
         }
         thread::sleep(Duration::from_millis(5));
+    }
+    match &canceller {
+        Some(c) => {
+            if !c.summary().on {
+                analyzer.note("echo cancellation stopped during the recording; the rest has the raw microphone".into());
+            }
+            analyzer.set_echo(c.summary());
+        }
+        None if echo && other.is_some() => analyzer.note("echo cancellation could not start; the microphone is raw".into()),
+        None => {}
     }
     analyzer
 }

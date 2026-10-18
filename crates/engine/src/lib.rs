@@ -19,6 +19,7 @@
 mod analyzer;
 mod capture;
 mod detect;
+mod echo;
 mod error;
 mod file;
 mod mixer;
@@ -28,6 +29,7 @@ mod source;
 pub mod webm;
 
 pub use analyzer::{HealthPoint, HealthReport, SourceSummary};
+pub use echo::EchoSummary;
 pub use capture::{input_devices, mic_users, request_microphone_access, InputDevice};
 pub use detect::{classify_bundle, AppKind, CallWatcher, MicUser, WatchEvent};
 pub use error::Error;

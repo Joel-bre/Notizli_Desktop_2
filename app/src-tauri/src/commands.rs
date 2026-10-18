@@ -29,6 +29,7 @@ pub struct StateView {
     token_error: Option<String>,
     mic_device: Option<String>,
     ask_on_calls: bool,
+    echo_cancellation: bool,
     open_at_login: bool,
     /// A downloaded update's version, ready to install.
     update_ready: Option<String>,
@@ -114,6 +115,7 @@ pub fn get_state(app: AppHandle, state: State<'_, AppState>) -> StateView {
         token_error: state.token_error.lock().unwrap().clone(),
         mic_device: settings.mic_device.clone(),
         ask_on_calls: settings.ask_on_calls,
+        echo_cancellation: settings.echo_cancellation,
         open_at_login: settings.open_at_login.unwrap_or(false),
         update_ready: crate::updates::ready(&app),
         recording,
@@ -316,6 +318,14 @@ fn now_text() -> String {
     now.format(&f).unwrap_or_default()
 }
 
+/// The microphone and echo setting for a new recording, read under one lock:
+/// two `lock()` calls in one statement would deadlock (the first guard lives
+/// until the statement ends).
+fn recorder_settings(settings: &Mutex<notizli_core::account::Settings>) -> (Option<String>, bool) {
+    let s = settings.lock().unwrap();
+    (s.mic_device.clone(), s.echo_cancellation)
+}
+
 fn default_title() -> String {
     format!("Desktop recording — {}", now_text())
 }
@@ -365,10 +375,12 @@ async fn start(app: AppHandle, title: Option<String>, pick: Option<(String, Opti
         }
         let _ = ev_app.emit("rec", &e);
     });
+    let (mic_device, echo_cancellation) = recorder_settings(&state.settings);
     let cfg = RecorderConfig {
         path: state.store.audio_path(&meta.id),
-        mic_device: state.settings.lock().unwrap().mic_device.clone(),
+        mic_device,
         capture_other_side: true,
+        echo_cancellation,
         writing_app: format!("Notizli {}", app.package_info().version),
     };
     let started = tauri::async_runtime::spawn_blocking(move || {
@@ -508,6 +520,14 @@ pub fn install_update(app: AppHandle) -> Res<()> {
 pub fn set_ask_on_calls(app: AppHandle, state: State<'_, AppState>, on: bool) {
     state.update_settings(|s| s.ask_on_calls = on);
     log::info!("ask to record when a call or meeting starts: {on}");
+    changed(&app);
+}
+
+/// "Remove the call's sound from my microphone"; applies from the next recording.
+#[tauri::command]
+pub fn set_echo_cancellation(app: AppHandle, state: State<'_, AppState>, on: bool) {
+    state.update_settings(|s| s.echo_cancellation = on);
+    log::info!("echo cancellation: {on}");
     changed(&app);
 }
 
@@ -684,6 +704,15 @@ pub fn retry_later(meta: &mut Meta, error: &str) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn recording_reads_the_settings_under_one_lock() {
+        let settings = std::sync::Mutex::new(notizli_core::account::Settings { mic_device: Some("usb".into()), echo_cancellation: false, ..Default::default() });
+        assert_eq!(recorder_settings(&settings), (Some("usb".to_string()), false));
+        // Locking twice in one statement used to deadlock Record; the lock is free again.
+        assert!(settings.try_lock().is_ok());
+    }
+
     use super::*;
 
     #[test]

@@ -205,3 +205,21 @@ call detection is otherwise off and hides every box at once.
    "Starting now. Record it?"; left alone, it goes after 60 s and doesn't come
    back. With a new id and start, **Record** → "Desktop recording — …" with
    "For: Weekly sync · … · In person or by phone". Switch off → no box.
+
+---
+
+## Echo cancellation (0.5.0)
+
+On the laptop speakers, no headphones:
+
+1. Record a call (or play a YouTube video of someone talking) and stay silent
+   for 30 s, then talk alone for 20 s, then talk over it for 30 s.
+2. On notizli.ch the minutes should give the other side's words to the other
+   side, not to you, and your sentences to you.
+3. The health report (Diagnostics) says `"echo": {"on": true, "removed_db": …}`.
+4. Untick "Remove the call's sound from my microphone" and repeat: the report
+   says `"on": false` and the microphone hears the call again.
+5. With headphones nothing should change: your voice sounds as before.
+
+Without the app: `notizli-rec record` prints "Echo cancellation: on, the
+microphone was N dB quieter while the call played"; `--no-echo-cancel` turns it off.

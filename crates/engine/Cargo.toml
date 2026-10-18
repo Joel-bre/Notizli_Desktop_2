@@ -18,6 +18,9 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 log.workspace = true
+# WebRTC AEC3 in pure Rust: removes the call's sound from the microphone.
+# Exact version: its API is still changing (see src/echo.rs).
+aec3 = "=0.4.0"
 
 [target.'cfg(windows)'.dependencies]
 wasapi = "0.24"
