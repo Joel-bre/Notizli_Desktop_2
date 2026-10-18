@@ -49,6 +49,18 @@ To try it: [TESTING.md](TESTING.md).
   are written and synced as they complete, so a crash loses at most ~2 s; the
   app repairs interrupted files at the next start and queues them for upload.
   Everything is also kept in memory, so a failing disk doesn't lose the meeting.
+- **Echo cancellation.** On laptop speakers the microphone hears the call (or a
+  video) about as loud as the call channel. The call channel is exactly what
+  the computer played, so it is the reference: every 10 ms the mixer runs
+  WebRTC's AEC3 (crate `aec3`, pure Rust, `crates/engine/src/echo.rs`) and the
+  cleaned microphone replaces the raw one. Echo removal only, no noise
+  suppression or gain control, with a gentler suppressor than WebRTC's default
+  (the default chopped the user's voice when both sides talked at once). On a
+  laptop-speaker test it removed 27-44 dB of echo and kept the voice alone
+  within ~1 dB; when both talk at once the voice can still sound a little
+  choppy. The first seconds, and a moment after a speaker change, let some echo
+  through while it adapts. Switch: "Remove the call's sound from my
+  microphone" (on by default); `notizli-rec --no-echo-cancel`.
 - **Health report.** Every recording gets `<id>.health.json`: levels of both
   sides every 10 s, what was being recorded, device switches, gaps, and a plain
   verdict. It contains no audio and no words.
@@ -200,7 +212,6 @@ only while this repository is public.
   a code-signing certificate as a secret. (macOS releases are signed and
   notarized; CI test builds are ad-hoc.)
 - **macOS universal build** (Intel Macs): currently Apple Silicon only.
-- **Microphone clean-up.** No echo cancellation or noise suppression yet. The
-  call's channel is the perfect echo reference for it later.
+- **Noise suppression** (echo cancellation is done; see "How recording works").
 - **Separate-track transcription on the server** (room vs. online speakers).
 - **On-device transcription** ("private mode"), for later.
