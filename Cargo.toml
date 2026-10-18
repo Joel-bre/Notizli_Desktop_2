@@ -20,6 +20,10 @@ thiserror = "2"
 log = "0.4"
 time = { version = "0.3", features = ["formatting", "parsing", "local-offset", "macros"] }
 
+# The echo canceller runs every 10 ms in real time; keep it fast in debug builds too.
+[profile.dev.package.aec3]
+opt-level = 3
+
 [profile.release]
 opt-level = 3
 lto = "thin"

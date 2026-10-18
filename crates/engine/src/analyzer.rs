@@ -53,6 +53,8 @@ pub struct HealthReport {
     pub warned: bool,
     pub timeline: Vec<HealthPoint>,
     pub events: Vec<String>,
+    /// Whether the call's sound was removed from the microphone, and how much.
+    pub echo: crate::EchoSummary,
 }
 
 pub struct Analyzer {
@@ -80,6 +82,7 @@ pub struct Analyzer {
     loudest_db: [f32; 2],
     timeline: Vec<HealthPoint>,
     notes: Vec<String>,
+    echo: crate::EchoSummary,
 }
 
 fn db(sq_mean: f64) -> f32 {
@@ -109,7 +112,13 @@ impl Analyzer {
             loudest_db: [-120.0; 2],
             timeline: Vec::new(),
             notes: Vec::new(),
+            echo: crate::EchoSummary::default(),
         }
+    }
+
+    /// What echo cancellation did, for the report (set by the mixer at the end).
+    pub fn set_echo(&mut self, echo: crate::EchoSummary) {
+        self.echo = echo;
     }
 
     pub fn note(&mut self, text: String) {
@@ -266,6 +275,7 @@ impl Analyzer {
             warned: self.warned,
             timeline: self.timeline,
             events: self.notes,
+            echo: self.echo,
         }
     }
 }
