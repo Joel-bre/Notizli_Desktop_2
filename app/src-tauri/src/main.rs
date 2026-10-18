@@ -120,6 +120,7 @@ fn main() {
             commands::open_diagnostics,
             commands::install_update,
             commands::set_ask_on_calls,
+            commands::set_echo_cancellation,
             commands::set_open_at_login,
             commands::prompt_view,
             commands::prompt_record,

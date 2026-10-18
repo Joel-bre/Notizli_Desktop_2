@@ -29,6 +29,7 @@ pub struct StateView {
     token_error: Option<String>,
     mic_device: Option<String>,
     ask_on_calls: bool,
+    echo_cancellation: bool,
     open_at_login: bool,
     /// A downloaded update's version, ready to install.
     update_ready: Option<String>,
@@ -114,6 +115,7 @@ pub fn get_state(app: AppHandle, state: State<'_, AppState>) -> StateView {
         token_error: state.token_error.lock().unwrap().clone(),
         mic_device: settings.mic_device.clone(),
         ask_on_calls: settings.ask_on_calls,
+        echo_cancellation: settings.echo_cancellation,
         open_at_login: settings.open_at_login.unwrap_or(false),
         update_ready: crate::updates::ready(&app),
         recording,
@@ -369,6 +371,7 @@ async fn start(app: AppHandle, title: Option<String>, pick: Option<(String, Opti
         path: state.store.audio_path(&meta.id),
         mic_device: state.settings.lock().unwrap().mic_device.clone(),
         capture_other_side: true,
+        echo_cancellation: state.settings.lock().unwrap().echo_cancellation,
         writing_app: format!("Notizli {}", app.package_info().version),
     };
     let started = tauri::async_runtime::spawn_blocking(move || {
@@ -508,6 +511,14 @@ pub fn install_update(app: AppHandle) -> Res<()> {
 pub fn set_ask_on_calls(app: AppHandle, state: State<'_, AppState>, on: bool) {
     state.update_settings(|s| s.ask_on_calls = on);
     log::info!("ask to record when a call or meeting starts: {on}");
+    changed(&app);
+}
+
+/// "Remove the call's sound from my microphone"; applies from the next recording.
+#[tauri::command]
+pub fn set_echo_cancellation(app: AppHandle, state: State<'_, AppState>, on: bool) {
+    state.update_settings(|s| s.echo_cancellation = on);
+    log::info!("echo cancellation: {on}");
     changed(&app);
 }
 

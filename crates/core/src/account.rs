@@ -31,6 +31,9 @@ pub struct Settings {
     /// Start at login; `None` until decided (turned on at the first start).
     #[serde(default)]
     pub open_at_login: Option<bool>,
+    /// Remove the call's sound from the microphone while recording.
+    #[serde(default = "yes")]
+    pub echo_cancellation: bool,
 }
 
 fn yes() -> bool {
@@ -39,7 +42,7 @@ fn yes() -> bool {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { paired_email: None, device_label: None, upload_url: None, mic_device: None, ask_on_calls: true, open_at_login: None }
+        Settings { paired_email: None, device_label: None, upload_url: None, mic_device: None, ask_on_calls: true, open_at_login: None, echo_cancellation: true }
     }
 }
 
@@ -99,5 +102,14 @@ mod tests {
         let old: Settings = serde_json::from_str(r#"{"paired_email":"a@b.ch"}"#).unwrap();
         assert!(old.ask_on_calls);
         assert_eq!(old.open_at_login, None);
+    }
+
+    #[test]
+    fn echo_cancellation_is_on_unless_turned_off() {
+        assert!(Settings::default().echo_cancellation);
+        let old: Settings = serde_json::from_str(r#"{"paired_email":"a@b.ch"}"#).unwrap();
+        assert!(old.echo_cancellation, "settings saved before 0.5.0 get it on");
+        let off: Settings = serde_json::from_str(r#"{"echo_cancellation":false}"#).unwrap();
+        assert!(!off.echo_cancellation);
     }
 }

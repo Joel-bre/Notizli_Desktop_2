@@ -2,7 +2,7 @@
 //! levels live, and write a plain-language result. Used to check a computer
 //! before trusting it with a real meeting.
 //!
-//!   notizli-rec record [--minutes N] [--out DIR] [--mic DEVICE_ID] [--mic-only]
+//!   notizli-rec record [--minutes N] [--out DIR] [--mic DEVICE_ID] [--mic-only] [--no-echo-cancel]
 //!   notizli-rec devices
 //!   notizli-rec calls
 
@@ -23,7 +23,7 @@ fn main() {
         Some("calls") => calls(),
         Some("record") | None => record(&args[args.len().min(1)..]),
         _ => {
-            eprintln!("usage: notizli-rec record [--minutes N] [--out DIR] [--mic DEVICE_ID] [--mic-only]\n       notizli-rec devices\n       notizli-rec calls");
+            eprintln!("usage: notizli-rec record [--minutes N] [--out DIR] [--mic DEVICE_ID] [--mic-only] [--no-echo-cancel]\n       notizli-rec devices\n       notizli-rec calls");
             2
         }
     };
@@ -78,6 +78,7 @@ fn record(args: &[String]) -> i32 {
     let mut out_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let mut mic = None;
     let mut other_side = true;
+    let mut echo = true;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -85,6 +86,7 @@ fn record(args: &[String]) -> i32 {
             "--out" => out_dir = it.next().map(PathBuf::from).unwrap_or(out_dir),
             "--mic" => mic = it.next().cloned(),
             "--mic-only" => other_side = false,
+            "--no-echo-cancel" => echo = false,
             _ => {}
         }
     }
@@ -114,6 +116,7 @@ fn record(args: &[String]) -> i32 {
         path: path.clone(),
         mic_device: mic,
         capture_other_side: other_side,
+        echo_cancellation: echo,
         writing_app: format!("notizli-rec {}", env!("CARGO_PKG_VERSION")),
     };
     let recorder = match Recorder::start(cfg, events) {
@@ -187,6 +190,11 @@ fn result_text(rec: &Recording, microphone: &str, stamp: &str) -> String {
     t.push_str(&format!("Notizli recording test {stamp} (notizli-rec {}, {})\n", env!("CARGO_PKG_VERSION"), std::env::consts::OS));
     t.push_str(&format!("File: {} ({} s, {} KB, {})\n\n", rec.path.display(), rec.duration_ms / 1000, rec.size / 1024, rec.layout.as_str()));
     t.push_str(&format!("RESULT: {}\n\n", h.verdict));
+    t.push_str(&match (h.echo.on, h.echo.removed_db) {
+        (true, Some(db)) => format!("  Echo cancellation: on, the microphone was {db:.0} dB quieter while the call played\n"),
+        (true, None) => "  Echo cancellation: on (the call was silent)\n".to_string(),
+        (false, _) => "  Echo cancellation: off\n".to_string(),
+    });
     t.push_str(&format!(
         "  You (microphone \"{}\"): someone talking for {} s, loudest {:.0} dB, reopened {}x, gaps {}, dropped {} ms\n",
         if microphone.is_empty() { &h.mic.label } else { microphone },
