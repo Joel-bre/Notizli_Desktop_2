@@ -39,6 +39,9 @@ pub fn run(
     let mut chunk: Vec<f32> = Vec::with_capacity(STEP * channels * CHUNK_STEPS);
     // Built on this thread: it runs every 10 ms right here.
     let mut canceller = if echo && other.is_some() { EchoCanceller::new() } else { None };
+    // A reopened call capture (rebuilt tap, new speaker) can change the timing
+    // between the call and its echo: the canceller then starts afresh.
+    let mut call_opens = other.as_ref().map_or(0, |o| o.stats().opens);
     loop {
         let stopping = stop.load(Ordering::SeqCst);
         let due = (start.elapsed().as_nanos() * u128::from(SAMPLE_RATE) / 1_000_000_000) as u64;
@@ -49,6 +52,11 @@ pub fn run(
                 Some(o) => {
                     o.take(&mut other_buf, now);
                     if let Some(c) = canceller.as_mut() {
+                        let opens = o.stats().opens;
+                        if opens != call_opens {
+                            call_opens = opens;
+                            c.restart();
+                        }
                         c.process(&mut mic_buf, &other_buf);
                     }
                     analyzer.block(&mic_buf, Some(&other_buf));

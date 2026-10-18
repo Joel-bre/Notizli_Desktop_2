@@ -24,6 +24,17 @@ use crate::SAMPLE_RATE;
 /// Below this (mean square, about -60 dBFS) the call counts as silent.
 const CALL_ACTIVE: f64 = 1e-6;
 
+/// Every 5 s: what the canceller itself measured (numbers only).
+#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+pub struct EchoCheckpoint {
+    /// Seconds since the recording started.
+    pub t_s: u32,
+    /// Delay it found between the call and its echo in the mic.
+    pub delay_ms: i32,
+    /// How much echo its filter removes (echo return loss enhancement).
+    pub erle_db: f32,
+}
+
 /// Echo cancellation in the health report: numbers only, no audio.
 #[derive(Clone, Debug, Default, Serialize, PartialEq)]
 pub struct EchoSummary {
@@ -32,7 +43,15 @@ pub struct EchoSummary {
     /// How much quieter the microphone was after cancellation while the call
     /// played (includes the user's own voice, so it understates the echo).
     pub removed_db: Option<f32>,
+    /// Fresh starts after the call capture was reopened.
+    pub restarts: u32,
+    pub checkpoints: Vec<EchoCheckpoint>,
 }
+
+/// 10 ms blocks between checkpoints (5 s).
+const CHECKPOINT_BLOCKS: u64 = 500;
+/// Checkpoints kept (5 s each: about 4 hours).
+const MAX_CHECKPOINTS: usize = 3_000;
 
 pub struct EchoCanceller {
     pipeline: LinearPipeline,
@@ -41,6 +60,10 @@ pub struct EchoCanceller {
     before: f64,
     after: f64,
     failed: bool,
+    blocks: u64,
+    restarts: u32,
+    latest: Option<aec3::api::control::Metrics>,
+    checkpoints: Vec<EchoCheckpoint>,
     /// Tests: make the next call into `aec3` panic.
     #[cfg(test)]
     panic_next: bool,
@@ -58,29 +81,50 @@ fn gentle_config() -> EchoCanceller3Config {
     cfg
 }
 
+fn build_pipeline() -> Option<LinearPipeline> {
+    let format = AudioFormat::ten_ms(SAMPLE_RATE, 1);
+    linear::builder(format, format)
+        .aec3_config(gentle_config())
+        .enable_noise_suppression(false)
+        .enable_gain_controller2(false)
+        .export_metrics(true)
+        .build()
+        .map_err(|e| log::warn!("echo cancellation unavailable: {e:?}"))
+        .ok()
+}
+
 impl EchoCanceller {
     /// None if the canceller can't be set up; the recording then keeps the raw mic.
     pub fn new() -> Option<EchoCanceller> {
         let format = AudioFormat::ten_ms(SAMPLE_RATE, 1);
-        match linear::builder(format, format)
-            .aec3_config(gentle_config())
-            .enable_noise_suppression(false)
-            .enable_gain_controller2(false)
-            .build()
-        {
-            Ok(pipeline) => Some(EchoCanceller {
-                pipeline,
-                out: vec![0.0; format.sample_count()],
-                before: 0.0,
-                after: 0.0,
-                failed: false,
-                #[cfg(test)]
-                panic_next: false,
-            }),
-            Err(e) => {
-                log::warn!("echo cancellation unavailable: {e:?}");
-                None
+        build_pipeline().map(|pipeline| EchoCanceller {
+            pipeline,
+            out: vec![0.0; format.sample_count()],
+            before: 0.0,
+            after: 0.0,
+            failed: false,
+            blocks: 0,
+            restarts: 0,
+            latest: None,
+            checkpoints: Vec::new(),
+            #[cfg(test)]
+            panic_next: false,
+        })
+    }
+
+    /// Start adapting from scratch: the call capture was reopened, so the
+    /// timing between the call and its echo may have changed.
+    pub fn restart(&mut self) {
+        if self.failed {
+            return;
+        }
+        match build_pipeline() {
+            Some(p) => {
+                self.pipeline = p;
+                self.restarts += 1;
+                log::info!("echo cancellation restarted (the call capture was reopened)");
             }
+            None => self.failed = true,
         }
     }
 
@@ -112,6 +156,20 @@ impl EchoCanceller {
                 return;
             }
         };
+        // Metrics come out with every block; keep the newest (the queue is bounded).
+        while let Ok(Some(m)) = self.pipeline.try_pull_metrics() {
+            self.latest = Some(*m.payload());
+        }
+        self.blocks += 1;
+        if self.blocks.is_multiple_of(CHECKPOINT_BLOCKS) && self.checkpoints.len() < MAX_CHECKPOINTS {
+            if let Some(m) = &self.latest {
+                self.checkpoints.push(EchoCheckpoint {
+                    t_s: (self.blocks / 100) as u32,
+                    delay_ms: m.delay_ms,
+                    erle_db: m.echo_return_loss_enhancement as f32,
+                });
+            }
+        }
         match produced {
             Ok(true) => {
                 if call_active {
@@ -130,7 +188,7 @@ impl EchoCanceller {
 
     pub fn summary(&self) -> EchoSummary {
         let removed_db = (self.before > 0.0 && self.after > 0.0).then(|| (10.0 * (self.before / self.after).log10()) as f32);
-        EchoSummary { on: !self.failed, removed_db }
+        EchoSummary { on: !self.failed, removed_db, restarts: self.restarts, checkpoints: self.checkpoints.clone() }
     }
 }
 
@@ -209,6 +267,30 @@ mod tests {
         ec.process(&mut next, &call);
         assert_eq!(next, raw, "and stays raw for the rest of the recording");
         assert!(!ec.summary().on, "the report says it stopped");
+    }
+
+    #[test]
+    fn checkpoints_every_5_s_report_the_delay_it_found() {
+        let mut ec = EchoCanceller::new().expect("echo canceller");
+        let _ = run(&mut ec);
+        let cps = ec.summary().checkpoints;
+        assert_eq!(cps.len(), 4, "{cps:?}");
+        assert_eq!(cps[0].t_s, 5);
+        // The synthetic echo arrives 40 ms late.
+        let d = cps[1].delay_ms;
+        assert!((30..=50).contains(&d), "delay {d} ms");
+    }
+
+    #[test]
+    fn a_restart_adapts_again_from_scratch() {
+        let mut ec = EchoCanceller::new().expect("echo canceller");
+        let _ = run(&mut ec);
+        ec.restart();
+        assert_eq!(ec.summary().restarts, 1);
+        let (mic, out) = run(&mut ec);
+        let s = SAMPLE_RATE as usize;
+        let removed = 10.0 * (energy(&mic[5 * s..10 * s]) / energy(&out[5 * s..10 * s])).log10();
+        assert!(removed >= 20.0, "removed only {removed:.1} dB after a restart");
     }
 
     #[test]
