@@ -1,6 +1,6 @@
 //! Once a second: which call apps and browsers use the microphone, and
 //! whether to ask "Record this call?" or count down after the call ended.
-//! Only while paired and "Ask me to record when a call starts" is on.
+//! Only while paired and "Ask me to record when a call or meeting starts" is on.
 
 use std::time::{Duration, Instant};
 

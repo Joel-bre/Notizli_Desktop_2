@@ -172,3 +172,36 @@ Then `cd app && NOTIZLI_FAKE_CALL=120 NOTIZLI_FAKE_UPCOMING=/tmp/upcoming.json n
 5. A 60-character title → the box shows one line ending in "…"; the buttons
    stay visible.
 6. `notizli.log` never contains "Weekly sync".
+
+## Calendar (0.4.0)
+
+1. With a meeting in the next 3 hours: the window says "Next meeting: …" and
+   the menu bar's first line "Next: …". During it: "This recording is for: …"
+   (ticked) and "Now: …".
+2. A meeting with no video link (an office visit) with someone invited: at its
+   start time the box asks "Starting now. Record it?". Record, finish; on
+   notizli.ch the recording is linked to that meeting.
+3. On an account without a calendar connected: the window suggests connecting.
+
+### Calendar 0.4.0, debug build (developer checks, not run before 0.4.0)
+
+Not watched yet either: the installed Notizli was running again when Claude
+built 0.4.0. Quit it first. Use the `/tmp/upcoming.json` above. The app reads
+the file again about every 15 s. While unpaired, add `NOTIZLI_FAKE_CALL=0`:
+call detection is otherwise off and hides every box at once.
+
+`cd app && NOTIZLI_FAKE_CALL=0 NOTIZLI_FAKE_UPCOMING=/tmp/upcoming.json npx tauri dev`:
+
+1. `"now": "g:demo"` → within 15 s the window shows the ticked "This recording
+   is for: Weekly sync · …", and the menu bar's first line is "Now: Weekly sync · …".
+2. Untick and record → "Not linked to a calendar meeting." Discard.
+3. `"now": null`, `start` 1 hour ahead → "Next meeting: Weekly sync · …" and
+   "Next: …" in the menu.
+4. `"connected": false, "meetings": []` → the connect line; **Connect…** opens
+   notizli.ch/settings.
+5. `"available": false` → nothing calendar-related.
+6. `"now": null`, `"joinType": null`, `start` 1 minute ahead → at the start
+   time the box says "Weekly sync · HH:MM · In person or by phone" /
+   "Starting now. Record it?"; left alone, it goes after 60 s and doesn't come
+   back. With a new id and start, **Record** → "Desktop recording — …" with
+   "For: Weekly sync · … · In person or by phone". Switch off → no box.

@@ -70,6 +70,7 @@ fn main() {
 
             uploader::spawn(app.handle().clone());
             detect::spawn(app.handle().clone());
+            calendar::spawn(app.handle().clone());
             tray::create(app.handle())?;
             let at_login = std::env::args().any(|a| a == "--hidden");
             // Development builds never update themselves.
@@ -101,6 +102,8 @@ fn main() {
             commands::set_mic,
             commands::open_pair_page,
             commands::open_meeting,
+            commands::calendar_refresh,
+            commands::open_calendar_settings,
             commands::submit_pair_text,
             commands::cancel_pair,
             commands::confirm_pair,

@@ -2,12 +2,18 @@
 //! recorder: titles and times only, never who is invited. The app keeps them
 //! in memory only (docs/superpowers/specs/2026-10-14-calendar-design.md).
 
+use std::collections::HashSet;
+
 use serde::Deserialize;
 use time::format_description::well_known::Rfc3339;
-use time::{OffsetDateTime, UtcOffset};
+use time::{Duration, OffsetDateTime, UtcOffset};
 
 /// Longer titles are cut so the "Record it?" box keeps its buttons.
 const MAX_TITLE: usize = 48;
+
+/// How long after its start an in-person meeting is still asked about (a
+/// laptop that wakes later doesn't ask for a meeting long under way).
+pub const ASK_WITHIN: Duration = Duration::minutes(2);
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 pub struct Upcoming {
@@ -46,6 +52,10 @@ fn parse(s: &str) -> Option<OffsetDateTime> {
 impl Meeting {
     pub fn start_at(&self) -> Option<OffsetDateTime> {
         parse(&self.start)
+    }
+
+    pub fn end_at(&self) -> Option<OffsetDateTime> {
+        parse(&self.end)
     }
 
     /// No video link: in person or by phone, so call detection can't notice it.
@@ -89,6 +99,31 @@ impl Upcoming {
     /// The meeting a recording started now belongs to, when the server is sure.
     pub fn now_meeting(&self) -> Option<&Meeting> {
         self.now.as_deref().and_then(|id| self.meeting(id))
+    }
+
+    /// [`Self::now_meeting`], unless it has ended by `at`: the list can be
+    /// minutes old, and a recording after the end isn't for that meeting.
+    pub fn now_meeting_at(&self, at: OffsetDateTime) -> Option<&Meeting> {
+        self.now_meeting().filter(|m| m.end_at().is_none_or(|e| at < e))
+    }
+
+    /// The soonest meeting that hasn't started at `at`, other than the one on now.
+    pub fn next_meeting(&self, at: OffsetDateTime) -> Option<&Meeting> {
+        self.meetings
+            .iter()
+            .filter(|m| Some(m.id.as_str()) != self.now.as_deref())
+            .filter_map(|m| Some((m.start_at()?, m)))
+            .filter(|(s, _)| *s > at)
+            .min_by_key(|(s, _)| *s)
+            .map(|(_, m)| m)
+    }
+
+    /// A meeting with no video link that started less than [`ASK_WITHIN`]
+    /// before `at` and wasn't asked about yet.
+    pub fn in_person_due(&self, at: OffsetDateTime, asked: &HashSet<String>) -> Option<&Meeting> {
+        self.meetings.iter().find(|m| {
+            m.in_person() && !asked.contains(&m.id) && m.start_at().is_some_and(|s| s <= at && at - s < ASK_WITHIN)
+        })
     }
 }
 
@@ -140,6 +175,56 @@ mod tests {
         assert_eq!(meeting("X", at, Some("other")).line(offset!(UTC)), "X · 12:00 · Online");
         assert_eq!(meeting("(no title)", at, Some("zoom")).line(offset!(+1)), "Untitled meeting · 13:00 · Zoom");
         assert_eq!(meeting("X", "not a time", None).line(offset!(UTC)), "X · In person or by phone");
+    }
+
+    use std::collections::HashSet;
+
+    fn at(s: &str) -> OffsetDateTime {
+        OffsetDateTime::parse(s, &Rfc3339).unwrap()
+    }
+
+    fn list(now: Option<&str>, meetings: Vec<Meeting>) -> Upcoming {
+        Upcoming { available: true, connected: true, now: now.map(str::to_string), meetings }
+    }
+
+    #[test]
+    fn the_meeting_on_now_is_none_once_it_has_ended() {
+        let mut m = meeting("A", "2026-10-14T11:30:00Z", Some("teams"));
+        m.end = "2026-10-14T12:00:00Z".into();
+        let u = list(Some("g:A"), vec![m]);
+        assert_eq!(u.now_meeting_at(at("2026-10-14T11:59:59Z")).unwrap().title, "A");
+        assert!(u.now_meeting_at(at("2026-10-14T12:00:00Z")).is_none());
+        assert!(u.now_meeting_at(at("2026-10-14T14:00:00Z")).is_none());
+    }
+
+    #[test]
+    fn next_meeting_is_the_soonest_not_yet_started_one_other_than_now() {
+        let u = list(
+            Some("g:A"),
+            vec![
+                meeting("A", "2026-10-14T12:00:00Z", Some("teams")),
+                meeting("B", "2026-10-14T15:00:00Z", None),
+                meeting("C", "2026-10-14T13:00:00Z", Some("zoom")),
+            ],
+        );
+        assert_eq!(u.next_meeting(at("2026-10-14T12:05:00Z")).unwrap().title, "C");
+        assert_eq!(u.next_meeting(at("2026-10-14T13:30:00Z")).unwrap().title, "B");
+        assert!(u.next_meeting(at("2026-10-14T16:00:00Z")).is_none());
+    }
+
+    #[test]
+    fn an_in_person_meeting_is_due_in_its_first_two_minutes_once() {
+        let u = list(
+            None,
+            vec![meeting("Call", "2026-10-14T12:00:00Z", Some("teams")), meeting("Visit", "2026-10-14T12:00:00Z", None)],
+        );
+        let mut asked = HashSet::new();
+        assert!(u.in_person_due(at("2026-10-14T11:59:59Z"), &asked).is_none());
+        assert_eq!(u.in_person_due(at("2026-10-14T12:00:00Z"), &asked).unwrap().title, "Visit");
+        assert_eq!(u.in_person_due(at("2026-10-14T12:01:59Z"), &asked).unwrap().title, "Visit");
+        assert!(u.in_person_due(at("2026-10-14T12:02:00Z"), &asked).is_none());
+        asked.insert("g:Visit".to_string());
+        assert!(u.in_person_due(at("2026-10-14T12:00:30Z"), &asked).is_none());
     }
 
     #[test]
